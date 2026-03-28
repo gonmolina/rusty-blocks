@@ -236,7 +236,7 @@ impl EulerSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::block::{Gain, Integrator};
+    use crate::blocks::{Gain, Integrator};
     use crate::system::System;
 
     #[test]

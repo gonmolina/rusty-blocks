@@ -1,4 +1,4 @@
-use crate::block::{Block, Constant, Demux, Gain, InPort, Integrator, Mux, OutPort, Step, Sum};
+use crate::blocks::{Block, Constant, Demux, Gain, InPort, Integrator, Mux, OutPort, Step, Sum};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::cell::RefCell;
@@ -111,6 +111,30 @@ impl System {
         self.connections.push(Connection { from_block, from_port, to_block, to_port });
     }
 
+    /// Determines the execution order of blocks using Kahn's algorithm for topological sorting.
+    ///
+    /// In a simulation, a block can only calculate its output if its inputs are already 
+    /// known for the current time step. This algorithm identifies the dependencies and 
+    /// finds a valid sequence.
+    ///
+    /// # Direct Feedthrough & Algebraic Loops
+    /// A dependency only exists if the target block has *direct feedthrough* (it needs 
+    /// its input *now* to produce its output *now*). 
+    /// *   **Integrators**: Do NOT create immediate dependencies because their current output 
+    ///     depends on their state (the past), not the current input. This breaks loops.
+    /// *   **Gains/Sums**: Create immediate dependencies.
+    ///
+    /// # Kahn's Algorithm Steps
+    /// 1. **In-degree Calculation**: Count how many algebraic inputs each block has.
+    /// 2. **Initial Queue**: Add all blocks with zero in-degree (blocks that can start 
+    ///    executing immediately, like Integrators or Sources).
+    /// 3. **Processing**: While the queue is not empty:
+    ///    a. Pop a block `u` and add it to the execution order.
+    ///    b. For each block `v` connected to `u`'s output:
+    ///       - Decrement `v`'s in-degree.
+    ///       - If `v`'s in-degree becomes zero, add it to the queue.
+    /// 4. **Cycle Detection**: If the final order contains fewer blocks than the system, 
+    ///    an **Algebraic Loop** (invalid circular dependency) exists.
     pub fn calculate_execution_order(&self) -> Result<Vec<BlockId>, String> {
         let n = self.blocks.len();
         let mut adj = vec![Vec::new(); n];
@@ -133,6 +157,24 @@ impl System {
     }
 }
 
+/// A Subsystem is a specialized Block that encapsulates a complete internal System.
+///
+/// # Purpose
+/// Subsystems allow for hierarchical modeling, enabling the user to:
+/// 1. **Modularize**: Break down complex systems into smaller, manageable components.
+/// 2. **Reuse**: Define a component once (e.g., a PID controller) and use it multiple times.
+/// 3. **Abstract**: Hide internal implementation details from the parent system.
+///
+/// # Mechanism
+/// *   **Interfaces**: It uses `InPort` and `OutPort` blocks as its boundary. Inputs to the 
+///     Subsystem block in the parent system are mapped to its internal `InPort` blocks, and 
+///     internal `OutPort` signals are exposed as outputs to the parent.
+/// *   **State Management**: It aggregates the total number of continuous states of all 
+///     its internal blocks. The global solver sees the Subsystem's states as a contiguous 
+///     segment of the global state vector.
+/// *   **Execution**: During a simulation step, the Subsystem executes its internal blocks 
+///     in their own topological order whenever its `outputs()` or `derivatives()` methods 
+///     are called by the parent system.
 pub struct Subsystem {
     pub system: System,
     execution_order: Vec<BlockId>,
@@ -184,6 +226,23 @@ impl Subsystem {
         }
     }
 
+    /// Determines if the subsystem has direct feedthrough by searching for instantaneous paths.
+    ///
+    /// An instantaneous path exists if a signal can travel from an `InPort` to an `OutPort` 
+    /// passing only through blocks that also have direct feedthrough (e.g., `Gain`, `Sum`).
+    ///
+    /// # Algorithm
+    /// 1. **Graph Construction**: Builds an adjacency list where an edge exists between Block A 
+    ///    and Block B only if Block B has `has_direct_feedthrough() == true`. This effectively 
+    ///    prunes paths that are broken by stateful blocks (like `Integrator`).
+    /// 2. **Reachability Search (DFS)**: For each internal `InPort`, it performs a Depth-First 
+    ///    Search through the algebraic graph.
+    /// 3. **Terminal Condition**: If the search reaches any internal `OutPort`, the subsystem 
+    ///    is marked as having direct feedthrough.
+    ///
+    /// # Fan-out / Fan-in handling
+    /// The algorithm correctly handles multiple connections from a single output or multiple 
+    /// inputs to a single block by exploring all possible branches in the adjacency list.
     fn calculate_direct_feedthrough(system: &System, in_ports: &[BlockId], out_ports: &[BlockId]) -> bool {
         let n = system.blocks.len();
         let mut adj = vec![Vec::new(); n];
@@ -286,7 +345,7 @@ impl Block for Subsystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::block::{Gain, Integrator};
+    use crate::blocks::{Gain, Integrator};
 
     #[test]
     fn test_execution_order_simple_chain() {

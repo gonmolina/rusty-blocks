@@ -1,4 +1,4 @@
-mod block;
+mod blocks;
 mod solver;
 mod system;
 
