@@ -2,11 +2,12 @@ mod blocks;
 mod solver;
 mod system;
 
+use blocks::BlockRegistry;
 use serde::{Deserialize, Serialize};
 use solver::EulerSolver;
 use std::env;
 use std::fs;
-use system::{System, SystemConfig};
+use system::{Subsystem, System, SystemConfig};
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum SolverType {
@@ -59,6 +60,10 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Initialize Block Registry
+    let mut registry = BlockRegistry::std();
+    registry.register("Subsystem", Subsystem::build);
+
     // 1. Cargar Sistema
     let system_path = &args[1];
     let system_content =
@@ -83,7 +88,7 @@ fn main() {
         sim_params.solver, sim_params.dt, sim_params.t_final, sim_params.atol, sim_params.rtol
     );
 
-    let system = System::from_config(system_config);
+    let system = System::from_config(system_config, &registry);
     let mut solver = EulerSolver::new(&system).expect("Error al inicializar el solver");
 
     let mut t = 0.0;

@@ -1,4 +1,6 @@
-use super::Block;
+use super::{Block, BlockRegistry};
+use serde::Deserialize;
+use serde_json::Value;
 
 /// Multiplexer: Combines multiple input ports into one output port.
 pub struct Mux {
@@ -10,6 +12,13 @@ impl Mux {
     pub fn new(input_widths: Vec<usize>) -> Self {
         let total_width = input_widths.iter().sum();
         Self { input_widths, total_width }
+    }
+
+    pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        #[derive(Deserialize)]
+        struct Params { input_widths: Vec<usize> }
+        let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        Ok(Box::new(Self::new(p.input_widths)))
     }
 }
 
@@ -45,6 +54,13 @@ impl Demux {
     pub fn new(output_widths: Vec<usize>) -> Self {
         let total_input_width = output_widths.iter().sum();
         Self { output_widths, total_input_width }
+    }
+
+    pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        #[derive(Deserialize)]
+        struct Params { output_widths: Vec<usize> }
+        let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        Ok(Box::new(Self::new(p.output_widths)))
     }
 }
 

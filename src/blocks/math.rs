@@ -1,4 +1,6 @@
-use super::Block;
+use super::{Block, BlockRegistry};
+use serde::Deserialize;
+use serde_json::Value;
 
 /// A simple Constant Gain block.
 pub struct Gain {
@@ -9,6 +11,13 @@ pub struct Gain {
 impl Gain {
     pub fn new(k: f64, width: usize) -> Self {
         Self { k, width }
+    }
+
+    pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        #[derive(Deserialize)]
+        struct Params { k: f64, width: usize }
+        let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        Ok(Box::new(Self::new(p.k, p.width)))
     }
 }
 
@@ -40,6 +49,13 @@ pub struct Sum {
 impl Sum {
     pub fn new(signs: &str, width: usize) -> Self {
         Self { signs: signs.to_string(), width }
+    }
+
+    pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        #[derive(Deserialize)]
+        struct Params { signs: String, width: usize }
+        let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        Ok(Box::new(Self::new(&p.signs, p.width)))
     }
 }
 

@@ -1,4 +1,6 @@
-use super::Block;
+use super::{Block, BlockRegistry};
+use serde::Deserialize;
+use serde_json::Value;
 
 /// An Integrator block.
 pub struct Integrator {
@@ -8,6 +10,13 @@ pub struct Integrator {
 impl Integrator {
     pub fn new(initial_conditions: Vec<f64>) -> Self {
         Self { initial_conditions }
+    }
+
+    pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        #[derive(Deserialize)]
+        struct Params { ic: Vec<f64> }
+        let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        Ok(Box::new(Self::new(p.ic)))
     }
 }
 

@@ -1,25 +1,11 @@
-use crate::blocks::{Block, Constant, Demux, Gain, InPort, Integrator, Mux, OutPort, Step, Sum};
+use crate::blocks::{Block, BlockRegistry};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::cell::RefCell;
+use serde_json::Value;
 
 pub type BlockId = usize;
 pub type PortId = usize;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "params")]
-pub enum BlockConfig {
-    Gain { k: f64, width: usize },
-    Integrator { ic: Vec<f64> },
-    Constant { value: Vec<f64> },
-    Step { initial_value: f64, final_value: f64, step_time: f64 },
-    Sum { signs: String, width: usize },
-    Mux { input_widths: Vec<usize> },
-    Demux { output_widths: Vec<usize> },
-    InPort { width: usize },
-    OutPort { width: usize },
-    Subsystem(SystemConfig),
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionConfig {
@@ -39,8 +25,8 @@ pub struct SystemConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockJson {
     pub id: String,
-    #[serde(flatten)]
-    pub config: BlockConfig,
+    pub r#type: String,
+    pub params: Value,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -71,24 +57,13 @@ impl System {
         id
     }
 
-    pub fn from_config(config: SystemConfig) -> Self {
+    pub fn from_config(config: SystemConfig, registry: &BlockRegistry) -> Self {
         let mut system = Self::new();
         let mut id_map = HashMap::new();
 
         for b_json in config.blocks {
-            let block: Box<dyn Block> = match b_json.config {
-                BlockConfig::Gain { k, width } => Box::new(Gain::new(k, width)),
-                BlockConfig::Integrator { ic } => Box::new(Integrator::new(ic)),
-                BlockConfig::Constant { value } => Box::new(Constant::new(value)),
-                BlockConfig::Step { initial_value, final_value, step_time } => 
-                    Box::new(Step::new(initial_value, final_value, step_time)),
-                BlockConfig::Sum { signs, width } => Box::new(Sum::new(&signs, width)),
-                BlockConfig::Mux { input_widths } => Box::new(Mux::new(input_widths)),
-                BlockConfig::Demux { output_widths } => Box::new(Demux::new(output_widths)),
-                BlockConfig::InPort { width } => Box::new(InPort::new(width)),
-                BlockConfig::OutPort { width } => Box::new(OutPort::new(width)),
-                BlockConfig::Subsystem(sub_config) => Box::new(Subsystem::from_config(sub_config)),
-            };
+            let block = registry.build(&b_json.r#type, b_json.params)
+                .expect(&format!("Error building block {}: {}", b_json.id, b_json.r#type));
             let internal_id = system.add_block(block);
             id_map.insert(b_json.id, internal_id);
         }
@@ -111,30 +86,6 @@ impl System {
         self.connections.push(Connection { from_block, from_port, to_block, to_port });
     }
 
-    /// Determines the execution order of blocks using Kahn's algorithm for topological sorting.
-    ///
-    /// In a simulation, a block can only calculate its output if its inputs are already 
-    /// known for the current time step. This algorithm identifies the dependencies and 
-    /// finds a valid sequence.
-    ///
-    /// # Direct Feedthrough & Algebraic Loops
-    /// A dependency only exists if the target block has *direct feedthrough* (it needs 
-    /// its input *now* to produce its output *now*). 
-    /// *   **Integrators**: Do NOT create immediate dependencies because their current output 
-    ///     depends on their state (the past), not the current input. This breaks loops.
-    /// *   **Gains/Sums**: Create immediate dependencies.
-    ///
-    /// # Kahn's Algorithm Steps
-    /// 1. **In-degree Calculation**: Count how many algebraic inputs each block has.
-    /// 2. **Initial Queue**: Add all blocks with zero in-degree (blocks that can start 
-    ///    executing immediately, like Integrators or Sources).
-    /// 3. **Processing**: While the queue is not empty:
-    ///    a. Pop a block `u` and add it to the execution order.
-    ///    b. For each block `v` connected to `u`'s output:
-    ///       - Decrement `v`'s in-degree.
-    ///       - If `v`'s in-degree becomes zero, add it to the queue.
-    /// 4. **Cycle Detection**: If the final order contains fewer blocks than the system, 
-    ///    an **Algebraic Loop** (invalid circular dependency) exists.
     pub fn calculate_execution_order(&self) -> Result<Vec<BlockId>, String> {
         let n = self.blocks.len();
         let mut adj = vec![Vec::new(); n];
@@ -157,24 +108,6 @@ impl System {
     }
 }
 
-/// A Subsystem is a specialized Block that encapsulates a complete internal System.
-///
-/// # Purpose
-/// Subsystems allow for hierarchical modeling, enabling the user to:
-/// 1. **Modularize**: Break down complex systems into smaller, manageable components.
-/// 2. **Reuse**: Define a component once (e.g., a PID controller) and use it multiple times.
-/// 3. **Abstract**: Hide internal implementation details from the parent system.
-///
-/// # Mechanism
-/// *   **Interfaces**: It uses `InPort` and `OutPort` blocks as its boundary. Inputs to the 
-///     Subsystem block in the parent system are mapped to its internal `InPort` blocks, and 
-///     internal `OutPort` signals are exposed as outputs to the parent.
-/// *   **State Management**: It aggregates the total number of continuous states of all 
-///     its internal blocks. The global solver sees the Subsystem's states as a contiguous 
-///     segment of the global state vector.
-/// *   **Execution**: During a simulation step, the Subsystem executes its internal blocks 
-///     in their own topological order whenever its `outputs()` or `derivatives()` methods 
-///     are called by the parent system.
 pub struct Subsystem {
     pub system: System,
     execution_order: Vec<BlockId>,
@@ -188,8 +121,8 @@ pub struct Subsystem {
 }
 
 impl Subsystem {
-    pub fn from_config(config: SystemConfig) -> Self {
-        let system = System::from_config(config);
+    pub fn from_config(config: SystemConfig, registry: &BlockRegistry) -> Self {
+        let system = System::from_config(config, registry);
         let execution_order = system.calculate_execution_order().expect("Algebraic loop in subsystem");
         let mut block_state_offsets = vec![0; system.blocks.len()];
         let mut current_offset = 0;
@@ -226,23 +159,11 @@ impl Subsystem {
         }
     }
 
-    /// Determines if the subsystem has direct feedthrough by searching for instantaneous paths.
-    ///
-    /// An instantaneous path exists if a signal can travel from an `InPort` to an `OutPort` 
-    /// passing only through blocks that also have direct feedthrough (e.g., `Gain`, `Sum`).
-    ///
-    /// # Algorithm
-    /// 1. **Graph Construction**: Builds an adjacency list where an edge exists between Block A 
-    ///    and Block B only if Block B has `has_direct_feedthrough() == true`. This effectively 
-    ///    prunes paths that are broken by stateful blocks (like `Integrator`).
-    /// 2. **Reachability Search (DFS)**: For each internal `InPort`, it performs a Depth-First 
-    ///    Search through the algebraic graph.
-    /// 3. **Terminal Condition**: If the search reaches any internal `OutPort`, the subsystem 
-    ///    is marked as having direct feedthrough.
-    ///
-    /// # Fan-out / Fan-in handling
-    /// The algorithm correctly handles multiple connections from a single output or multiple 
-    /// inputs to a single block by exploring all possible branches in the adjacency list.
+    pub fn build(v: Value, registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        let config: SystemConfig = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        Ok(Box::new(Self::from_config(config, registry)))
+    }
+
     fn calculate_direct_feedthrough(system: &System, in_ports: &[BlockId], out_ports: &[BlockId]) -> bool {
         let n = system.blocks.len();
         let mut adj = vec![Vec::new(); n];
@@ -345,7 +266,7 @@ impl Block for Subsystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blocks::{Gain, Integrator};
+    use crate::blocks::{Gain, Integrator, Constant};
 
     #[test]
     fn test_execution_order_simple_chain() {
@@ -361,36 +282,108 @@ mod tests {
 
     #[test]
     fn test_subsystem_direct_feedthrough() {
+        let registry = BlockRegistry::std();
         // Subsystem 1: InPort -> Gain -> OutPort (Should have direct feedthrough)
         let sub_config_direct = SystemConfig {
             name: "Direct".to_string(),
             blocks: vec![
-                BlockJson { id: "in".to_string(), config: BlockConfig::InPort { width: 1 } },
-                BlockJson { id: "gain".to_string(), config: BlockConfig::Gain { k: 2.0, width: 1 } },
-                BlockJson { id: "out".to_string(), config: BlockConfig::OutPort { width: 1 } },
+                BlockJson { id: "in".to_string(), r#type: "InPort".to_string(), params: serde_json::json!({ "width": 1 }) },
+                BlockJson { id: "gain".to_string(), r#type: "Gain".to_string(), params: serde_json::json!({ "k": 2.0, "width": 1 }) },
+                BlockJson { id: "out".to_string(), r#type: "OutPort".to_string(), params: serde_json::json!({ "width": 1 }) },
             ],
             connections: vec![
                 ConnectionConfig { from: "in".to_string(), from_port: 0, to: "gain".to_string(), to_port: 0 },
                 ConnectionConfig { from: "gain".to_string(), from_port: 0, to: "out".to_string(), to_port: 0 },
             ],
         };
-        let sub_direct = Subsystem::from_config(sub_config_direct);
+        let sub_direct = Subsystem::from_config(sub_config_direct, &registry);
         assert!(sub_direct.has_direct_feedthrough());
 
         // Subsystem 2: InPort -> Integrator -> OutPort (Should NOT have direct feedthrough)
         let sub_config_indirect = SystemConfig {
             name: "Indirect".to_string(),
             blocks: vec![
-                BlockJson { id: "in".to_string(), config: BlockConfig::InPort { width: 1 } },
-                BlockJson { id: "int".to_string(), config: BlockConfig::Integrator { ic: vec![0.0] } },
-                BlockJson { id: "out".to_string(), config: BlockConfig::OutPort { width: 1 } },
+                BlockJson { id: "in".to_string(), r#type: "InPort".to_string(), params: serde_json::json!({ "width": 1 }) },
+                BlockJson { id: "int".to_string(), r#type: "Integrator".to_string(), params: serde_json::json!({ "ic": [0.0] }) },
+                BlockJson { id: "out".to_string(), r#type: "OutPort".to_string(), params: serde_json::json!({ "width": 1 }) },
             ],
             connections: vec![
                 ConnectionConfig { from: "in".to_string(), from_port: 0, to: "int".to_string(), to_port: 0 },
                 ConnectionConfig { from: "int".to_string(), from_port: 0, to: "out".to_string(), to_port: 0 },
             ],
         };
-        let sub_indirect = Subsystem::from_config(sub_config_indirect);
+        let sub_indirect = Subsystem::from_config(sub_config_indirect, &registry);
         assert!(!sub_indirect.has_direct_feedthrough());
+    }
+
+    #[test]
+    fn test_constant_block() {
+        let registry = BlockRegistry::std();
+        let json_data = r#"
+        {
+            "name": "Constant Test",
+            "blocks": [
+                { "id": "c1", "type": "Constant", "params": { "value": [5.0, 6.0] } },
+                { "id": "g1", "type": "Gain", "params": { "k": 2.0, "width": 2 } }
+            ],
+            "connections": [
+                { "from": "c1", "from_port": 0, "to": "g1", "to_port": 0 }
+            ]
+        }
+        "#;
+
+        let config: SystemConfig = serde_json::from_str(json_data).unwrap();
+        let system = System::from_config(config, &registry);
+        
+        let mut y_c = vec![vec![0.0, 0.0]];
+        let mut y_c_ptr: Vec<&mut [f64]> = y_c.iter_mut().map(|v| v.as_mut_slice()).collect();
+        system.blocks[0].outputs(0.0, &[], &[], &mut y_c_ptr);
+        assert_eq!(y_c[0], vec![5.0, 6.0]);
+    }
+
+    #[test]
+    fn test_subsystem_basic() {
+        let mut registry = BlockRegistry::std();
+        registry.register("Subsystem", Subsystem::build);
+
+        let json_data = r#"
+        {
+            "name": "Main System",
+            "blocks": [
+                { "id": "const1", "type": "Constant", "params": { "value": [10.0] } },
+                { 
+                  "id": "sub1", 
+                  "type": "Subsystem", 
+                  "params": {
+                    "name": "MySubsystem",
+                    "blocks": [
+                        { "id": "in1", "type": "InPort", "params": { "width": 1 } },
+                        { "id": "gain1", "type": "Gain", "params": { "k": 3.0, "width": 1 } },
+                        { "id": "out1", "type": "OutPort", "params": { "width": 1 } }
+                    ],
+                    "connections": [
+                        { "from": "in1", "from_port": 0, "to": "gain1", "to_port": 0 },
+                        { "from": "gain1", "from_port": 0, "to": "out1", "to_port": 0 }
+                    ]
+                  }
+                }
+            ],
+            "connections": [
+                { "from": "const1", "from_port": 0, "to": "sub1", "to_port": 0 }
+            ]
+        }
+        "#;
+
+        let config: SystemConfig = serde_json::from_str(json_data).unwrap();
+        let system = System::from_config(config, &registry);
+        
+        let mut y_sub = vec![vec![0.0]];
+        let mut y_sub_ptr: Vec<&mut [f64]> = y_sub.iter_mut().map(|v| v.as_mut_slice()).collect();
+        
+        let u_sub = [vec![10.0]];
+        let u_sub_refs: Vec<&[f64]> = u_sub.iter().map(|v| v.as_slice()).collect();
+        
+        system.blocks[1].outputs(0.0, &[], &u_sub_refs, &mut y_sub_ptr);
+        assert_eq!(y_sub[0][0], 30.0);
     }
 }

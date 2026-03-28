@@ -1,5 +1,7 @@
-use super::Block;
+use super::{Block, BlockRegistry};
 use std::cell::RefCell;
+use serde::Deserialize;
+use serde_json::Value;
 
 /// InPort: Entry point for signals into a subsystem.
 pub struct InPort {
@@ -13,6 +15,13 @@ impl InPort {
             width,
             value: RefCell::new(vec![0.0; width]),
         }
+    }
+
+    pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        #[derive(Deserialize)]
+        struct Params { width: usize }
+        let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        Ok(Box::new(Self::new(p.width)))
     }
 }
 
@@ -44,6 +53,13 @@ impl OutPort {
             width,
             value: RefCell::new(vec![0.0; width]),
         }
+    }
+
+    pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        #[derive(Deserialize)]
+        struct Params { width: usize }
+        let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
+        Ok(Box::new(Self::new(p.width)))
     }
 }
 
