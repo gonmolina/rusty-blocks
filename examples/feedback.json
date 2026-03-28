@@ -1,0 +1,11 @@
+{
+  "name": "Realimentación Negativa (Decaimiento Exponencial)",
+  "blocks": [
+    { "id": "i1", "type": "Integrator", "params": { "ic": 10.0 } },
+    { "id": "g1", "type": "Gain", "params": { "k": -5.0 } }
+  ],
+  "connections": [
+    { "from": "i1", "from_port": 0, "to": "g1", "to_port": 0 },
+    { "from": "g1", "from_port": 0, "to": "i1", "to_port": 0 }
+  ]
+}

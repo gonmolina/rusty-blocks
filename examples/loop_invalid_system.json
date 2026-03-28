@@ -1,0 +1,11 @@
+{
+  "name": "Invalid Algebraic Loop",
+  "blocks": [
+    { "id": "ga", "type": "Gain", "params": { "k": 1.0 } },
+    { "id": "gb", "type": "Gain", "params": { "k": 1.0 } }
+  ],
+  "connections": [
+    { "from": "ga", "from_port": 0, "to": "gb", "to_port": 0 },
+    { "from": "gb", "from_port": 0, "to": "ga", "to_port": 0 }
+  ]
+}

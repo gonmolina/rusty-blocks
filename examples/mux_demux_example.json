@@ -1,0 +1,27 @@
+{
+  "name": "Ejemplo de Mux y Demux con Señales Vectoriales",
+  "blocks": [
+    { "id": "c1", "type": "Constant", "params": { "value": [10.0] } },
+    { "id": "c2", "type": "Constant", "params": { "value": [20.0, 30.0] } },
+    
+    { "id": "mux1", "type": "Mux", "params": { "input_widths": [1, 2] } },
+    
+    { "id": "gain_vectorial", "type": "Gain", "params": { "k": 2.0, "width": 3 } },
+    
+    { "id": "demux1", "type": "Demux", "params": { "output_widths": [1, 2] } },
+    
+    { "id": "int1", "type": "Integrator", "params": { "ic": [0.0] } },
+    { "id": "int2", "type": "Integrator", "params": { "ic": [0.0, 0.0] } }
+  ],
+  "connections": [
+    { "from": "c1", "from_port": 0, "to": "mux1", "to_port": 0 },
+    { "from": "c2", "from_port": 0, "to": "mux1", "to_port": 1 },
+    
+    { "from": "mux1", "from_port": 0, "to": "gain_vectorial", "to_port": 0 },
+    
+    { "from": "gain_vectorial", "from_port": 0, "to": "demux1", "to_port": 0 },
+    
+    { "from": "demux1", "from_port": 0, "to": "int1", "to_port": 0 },
+    { "from": "demux1", "from_port": 1, "to": "int2", "to_port": 0 }
+  ]
+}

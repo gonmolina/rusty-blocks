@@ -1,0 +1,12 @@
+{
+  "name": "Chain System",
+  "blocks": [
+    { "id": "i1", "type": "Integrator", "params": { "ic": 1.0 } },
+    { "id": "g1", "type": "Gain", "params": { "k": 2.0 } },
+    { "id": "g2", "type": "Gain", "params": { "k": 0.5 } }
+  ],
+  "connections": [
+    { "from": "i1", "from_port": 0, "to": "g1", "to_port": 0 },
+    { "from": "g1", "from_port": 0, "to": "g2", "to_port": 0 }
+  ]
+}

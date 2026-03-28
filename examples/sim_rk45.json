@@ -1,0 +1,7 @@
+{
+  "dt": 0.1,
+  "t_final": 10.0,
+  "solver": "RK45",
+  "atol": 1e-8,
+  "rtol": 1e-4
+}
