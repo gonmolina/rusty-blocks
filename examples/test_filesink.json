@@ -1,0 +1,13 @@
+{
+  "name": "Prueba de FileSink",
+  "blocks": [
+    { "id": "oscilador", "type": "Integrator", "params": { "ic": [1.0] } },
+    { "id": "neg_gain", "type": "Gain", "params": { "k": -1.0, "width": 1 } },
+    { "id": "grabadora", "type": "FileSink", "params": { "filename": "salida_simulacion.csv", "interval": 0.5, "width": 1 } }
+  ],
+  "connections": [
+    { "from": "oscilador", "from_port": 0, "to": "neg_gain", "to_port": 0 },
+    { "from": "neg_gain", "from_port": 0, "to": "oscilador", "to_port": 0 },
+    { "from": "oscilador", "from_port": 0, "to": "grabadora", "to_port": 0 }
+  ]
+}

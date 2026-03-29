@@ -1,20 +1,22 @@
+use std::cell::RefCell;
 pub mod continuous;
 pub mod math;
 pub mod ports;
 pub mod routing;
+pub mod sinks;
 pub mod sources;
 
 pub use continuous::Integrator;
 pub use math::Gain;
 pub use ports::{InPort, OutPort};
 pub use routing::Mux;
+pub use sinks::FileSink;
 pub use sources::Constant;
 
 use std::collections::HashMap;
 use serde_json::Value;
 
 /// Signature for a function that creates a block from JSON parameters.
-/// Now includes a reference to the registry to support recursive building (Subsystems).
 pub type BlockBuilder = fn(Value, &BlockRegistry) -> Result<Box<dyn Block>, String>;
 
 /// A registry that maps block type names to their builder functions.
@@ -51,6 +53,7 @@ impl BlockRegistry {
         r.register("Demux", routing::Demux::build);
         r.register("InPort", ports::InPort::build);
         r.register("OutPort", ports::OutPort::build);
+        r.register("FileSink", sinks::FileSink::build);
         r
     }
 }
@@ -68,6 +71,15 @@ pub trait Block {
     
     fn has_direct_feedthrough(&self) -> bool;
     fn get_initial_conditions(&self, x: &mut [f64]);
+
+    // --- Event Handling & Finalization ---
+
+    /// Returns the next scheduled time for an event in this block (e.g., a sampling time).
+    fn next_event(&self, _t: f64) -> Option<f64> { None }
+
+    /// Called by the solver when an integration step is successfully accepted.
+    /// This is where side-effects (like writing to file or UI update) should happen.
+    fn on_step_end(&self, _t: f64, _x: &[f64], _u: &[&[f64]]) {}
 
     // Helper methods for Subsystems
     fn is_in_port(&self) -> bool { false }

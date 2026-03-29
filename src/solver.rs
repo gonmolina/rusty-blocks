@@ -63,35 +63,22 @@ impl EulerSolver {
         outputs: &mut Vec<Vec<Vec<f64>>>,
         inputs: &mut Vec<Vec<Vec<f64>>>,
     ) -> Vec<f64> {
-        // 1. Calculate outputs in topological order
         for &id in execution_order {
             let block = &system.blocks[id];
-
-            // Fill inputs from connections
             for conn in &system.connections {
                 if conn.to_block == id {
-                    let (from_block, from_port) = (conn.from_block, conn.from_port);
-                    let (to_block, to_port) = (conn.to_block, conn.to_port);
-                    // This is safe because of the topological order and no algebraic loops
-                    // but Rust's borrow checker might complain if we try to borrow from 'outputs' directly.
-                    // Since we are using indices, it's fine.
-                    let source_data = &outputs[from_block][from_port];
-                    inputs[to_block][to_port].copy_from_slice(source_data);
+                    let source_data = &outputs[conn.from_block][conn.from_port];
+                    inputs[conn.to_block][conn.to_port].copy_from_slice(source_data);
                 }
             }
-
             let n_s = block.num_states();
             let offset = block_state_offsets[id];
             let b_states = &x[offset..offset + n_s];
-            
-            // Prepare inputs and outputs for trait call
             let u_refs: Vec<&[f64]> = inputs[id].iter().map(|v| v.as_slice()).collect();
             let mut y_refs: Vec<&mut [f64]> = outputs[id].iter_mut().map(|v| v.as_mut_slice()).collect();
-            
             block.outputs(t, b_states, &u_refs, &mut y_refs);
         }
 
-        // 2. Calculate derivatives
         let mut dx_global = vec![0.0; x.len()];
         for (id, block) in system.blocks.iter().enumerate() {
             let n_s = block.num_states();
@@ -99,10 +86,8 @@ impl EulerSolver {
                 let offset = block_state_offsets[id];
                 let b_states = &x[offset..offset + n_s];
                 let mut b_dx = vec![0.0; n_s];
-                
                 let u_refs: Vec<&[f64]> = inputs[id].iter().map(|v| v.as_slice()).collect();
                 block.derivatives(t, b_states, &u_refs, &mut b_dx);
-                
                 dx_global[offset..offset + n_s].copy_from_slice(&b_dx);
             }
         }
@@ -125,7 +110,44 @@ impl EulerSolver {
         inputs
     }
 
-    pub fn step(&mut self, system: &System, dt: f64) {
+    fn get_dt_limit(&self, system: &System, suggested_dt: f64) -> f64 {
+        let mut dt = suggested_dt;
+        for block in &system.blocks {
+            if let Some(t_event) = block.next_event(self.t) {
+                // If event is very close to current time, it might be the one we just processed.
+                // We look for events strictly in the future.
+                if t_event > self.t + 1e-10 {
+                    dt = dt.min(t_event - self.t);
+                }
+            }
+        }
+        dt.max(1e-12)
+    }
+
+    fn finalize_step(&mut self, system: &System, inputs: &Vec<Vec<Vec<f64>>>) {
+        for (id, block) in system.blocks.iter().enumerate() {
+            let n_s = block.num_states();
+            let offset = self.block_state_offsets[id];
+            let b_states = &self.x[offset..offset + n_s];
+            let u_refs: Vec<&[f64]> = inputs[id].iter().map(|v| v.as_slice()).collect();
+            block.on_step_end(self.t, b_states, &u_refs);
+        }
+    }
+
+    fn ensure_initial_step_finalized(&mut self, system: &System) {
+        if self.t == 0.0 {
+            let mut inputs = self.create_inputs_buffer(system);
+            let mut outputs = self.outputs.clone();
+            // Force one calculation at t=0 to have correct inputs/outputs for sinks
+            self.compute_derivatives(system, 0.0, &self.x, &mut outputs, &mut inputs);
+            self.outputs = outputs;
+            self.finalize_step(system, &inputs);
+        }
+    }
+
+    pub fn step(&mut self, system: &System, suggested_dt: f64) {
+        self.ensure_initial_step_finalized(system);
+        let dt = self.get_dt_limit(system, suggested_dt);
         let mut inputs = self.create_inputs_buffer(system);
         let mut current_outputs = self.outputs.clone();
         
@@ -136,9 +158,12 @@ impl EulerSolver {
             self.x[i] += dt * dx[i];
         }
         self.t += dt;
+        self.finalize_step(system, &inputs);
     }
 
-    pub fn step_rk4(&mut self, system: &System, dt: f64) {
+    pub fn step_rk4(&mut self, system: &System, suggested_dt: f64) {
+        self.ensure_initial_step_finalized(system);
+        let dt = self.get_dt_limit(system, suggested_dt);
         let mut inputs = self.create_inputs_buffer(system);
         let mut temp_outputs = self.outputs.clone();
 
@@ -162,58 +187,40 @@ impl EulerSolver {
         }
 
         self.t += dt;
-        let mut final_outputs = temp_outputs;
+        let mut final_outputs = self.outputs.clone();
         self.compute_derivatives(system, self.t, &self.x, &mut final_outputs, &mut inputs);
         self.outputs = final_outputs;
+        self.finalize_step(system, &inputs);
     }
 
     pub fn step_rk45(&mut self, system: &System, initial_dt: f64, atol: f64, rtol: f64) -> f64 {
+        self.ensure_initial_step_finalized(system);
         let mut inputs = self.create_inputs_buffer(system);
         let mut temp_outputs = self.outputs.clone();
 
-        let mut h = initial_dt;
+        let mut h = self.get_dt_limit(system, initial_dt);
         let x0 = self.x.clone();
         let t0 = self.t;
 
         loop {
             let k1 = self.compute_derivatives(system, t0, &x0, &mut temp_outputs, &mut inputs);
-
             let mut x_temp = vec![0.0; x0.len()];
             for i in 0..x0.len() { x_temp[i] = x0[i] + h * (1.0 / 5.0) * k1[i]; }
             let k2 = self.compute_derivatives(system, t0 + h * (1.5 / 5.0), &x_temp, &mut temp_outputs, &mut inputs);
-
             for i in 0..x0.len() { x_temp[i] = x0[i] + h * (3.0 / 40.0 * k1[i] + 9.0 / 40.0 * k2[i]); }
             let k3 = self.compute_derivatives(system, t0 + h * (3.0 / 10.0), &x_temp, &mut temp_outputs, &mut inputs);
-
             for i in 0..x0.len() { x_temp[i] = x0[i] + h * (44.0 / 45.0 * k1[i] - 56.0 / 15.0 * k2[i] + 32.0 / 9.0 * k3[i]); }
             let k4 = self.compute_derivatives(system, t0 + h * (4.0 / 5.0), &x_temp, &mut temp_outputs, &mut inputs);
-
-            for i in 0..x0.len() {
-                x_temp[i] = x0[i] + h * (19372.0 / 6561.0 * k1[i] - 25360.0 / 2187.0 * k2[i] + 64448.0 / 6561.0 * k3[i] - 212.0 / 729.0 * k4[i]);
-            }
+            for i in 0..x0.len() { x_temp[i] = x0[i] + h * (19372.0 / 6561.0 * k1[i] - 25360.0 / 2187.0 * k2[i] + 64448.0 / 6561.0 * k3[i] - 212.0 / 729.0 * k4[i]); }
             let k5 = self.compute_derivatives(system, t0 + h * (8.0 / 9.0), &x_temp, &mut temp_outputs, &mut inputs);
-
-            for i in 0..x0.len() {
-                x_temp[i] = x0[i] + h * (9017.0 / 3168.0 * k1[i] - 355.0 / 33.0 * k2[i] + 46732.0 / 5247.0 * k3[i] + 49.0 / 176.0 * k4[i] - 5103.0 / 18656.0 * k5[i]);
-            }
+            for i in 0..x0.len() { x_temp[i] = x0[i] + h * (9017.0 / 3168.0 * k1[i] - 355.0 / 33.0 * k2[i] + 46732.0 / 5247.0 * k3[i] + 49.0 / 176.0 * k4[i] - 5103.0 / 18656.0 * k5[i]); }
             let k6 = self.compute_derivatives(system, t0 + h, &x_temp, &mut temp_outputs, &mut inputs);
-
             let mut x5 = vec![0.0; x0.len()];
-            for i in 0..x0.len() {
-                x5[i] = x0[i] + h * (35.0 / 384.0 * k1[i] + 500.0 / 1113.0 * k3[i] + 125.0 / 192.0 * k4[i] - 2187.0 / 6784.0 * k5[i] + 11.0 / 84.0 * k6[i]);
-            }
-
+            for i in 0..x0.len() { x5[i] = x0[i] + h * (35.0 / 384.0 * k1[i] + 500.0 / 1113.0 * k3[i] + 125.0 / 192.0 * k4[i] - 2187.0 / 6784.0 * k5[i] + 11.0 / 84.0 * k6[i]); }
             let k7 = self.compute_derivatives(system, t0 + h, &x5, &mut temp_outputs, &mut inputs);
-
             let mut max_err: f64 = 0.0;
             for i in 0..x0.len() {
-                let err = h * ((35.0 / 384.0 - 5179.0 / 57600.0) * k1[i]
-                        + (500.0 / 1113.0 - 7571.0 / 16695.0) * k3[i]
-                        + (125.0 / 192.0 - 393.0 / 640.0) * k4[i]
-                        + (-2187.0 / 6784.0 + 92097.0 / 339200.0) * k5[i]
-                        + (11.0 / 84.0 - 187.0 / 2100.0) * k6[i]
-                        - 1.0 / 40.0 * k7[i]);
-
+                let err = h * ((35.0 / 384.0 - 5179.0 / 57600.0) * k1[i] + (500.0 / 1113.0 - 7571.0 / 16695.0) * k3[i] + (125.0 / 192.0 - 393.0 / 640.0) * k4[i] + (-2187.0 / 6784.0 + 92097.0 / 339200.0) * k5[i] + (11.0 / 84.0 - 187.0 / 2100.0) * k6[i] - 1.0 / 40.0 * k7[i]);
                 let sc = atol + rtol * x0[i].abs().max(x5[i].abs());
                 max_err = f64::max(max_err, err.abs() / sc);
             }
@@ -222,6 +229,7 @@ impl EulerSolver {
                 self.x = x5;
                 self.t += h;
                 self.outputs = temp_outputs;
+                self.finalize_step(system, &inputs);
                 let h_next = h * 0.9 * (1.0 / max_err.max(1e-10)).powf(0.2);
                 return h_next.min(h * 5.0);
             } else {
@@ -244,16 +252,11 @@ mod tests {
         let mut system = System::new();
         let g1 = system.add_block(Box::new(Gain::new(-5.0, 1)));
         let i1 = system.add_block(Box::new(Integrator::new(vec![10.0])));
-
         system.connect(i1, 0, g1, 0);
         system.connect(g1, 0, i1, 0);
-
         let mut solver = EulerSolver::new(&system).unwrap();
         let dt = 0.001;
-        for _ in 0..1000 {
-            solver.step(&system, dt);
-        }
-
+        for _ in 0..1000 { solver.step(&system, dt); }
         let final_state = solver.get_block_state(i1, 1)[0];
         assert!(final_state < 0.1);
     }
