@@ -1,0 +1,101 @@
+{
+  "name": "Sistema de Control de Velocidad (PI + Motor Flexible)",
+  "blocks": [
+    {
+      "id": "referencia",
+      "type": "Step",
+      "params": { "initial_value": 0.0, "final_value": 5.0, "step_time": 1.0 }
+    },
+    {
+      "id": "controlador",
+      "type": "Subsystem",
+      "params": {
+        "name": "Controlador PI",
+        "blocks": [
+          { "id": "in_ref", "type": "InPort", "params": { "width": 1 } },
+          { "id": "in_fb", "type": "InPort", "params": { "width": 1 } },
+          { "id": "error", "type": "Sum", "params": { "signs": "+-", "width": 1 } },
+          { "id": "gain_kp", "type": "Gain", "params": { "k": 2.0, "width": 1 } },
+          { "id": "gain_ki", "type": "Gain", "params": { "k": 5.0, "width": 1 } },
+          { "id": "integrador_error", "type": "Integrator", "params": { "ic": [0.0] } },
+          { "id": "sum_pi", "type": "Sum", "params": { "signs": "++", "width": 1 } },
+          { "id": "out_v", "type": "OutPort", "params": { "width": 1 } }
+        ],
+        "connections": [
+          { "from": "in_ref", "from_port": 0, "to": "error", "to_port": 0 },
+          { "from": "in_fb", "from_port": 0, "to": "error", "to_port": 1 },
+          { "from": "error", "from_port": 0, "to": "gain_kp", "to_port": 0 },
+          { "from": "error", "from_port": 0, "to": "gain_ki", "to_port": 0 },
+          { "from": "gain_ki", "from_port": 0, "to": "integrador_error", "to_port": 0 },
+          { "from": "gain_kp", "from_port": 0, "to": "sum_pi", "to_port": 0 },
+          { "from": "integrador_error", "from_port": 0, "to": "sum_pi", "to_port": 1 },
+          { "from": "sum_pi", "from_port": 0, "to": "out_v", "to_port": 0 }
+        ]
+      }
+    },
+    {
+      "id": "planta",
+      "type": "Subsystem",
+      "params": {
+        "name": "Motor Flexible",
+        "blocks": [
+          { "id": "in_v", "type": "InPort", "params": { "width": 1 } },
+          { "id": "int_wm", "type": "Integrator", "params": { "ic": [0.0] } },
+          { "id": "int_thetam", "type": "Integrator", "params": { "ic": [0.0] } },
+          { "id": "int_wl", "type": "Integrator", "params": { "ic": [0.0] } },
+          { "id": "int_thetal", "type": "Integrator", "params": { "ic": [0.0] } },
+          { "id": "diff_theta", "type": "Sum", "params": { "signs": "+-", "width": 1 } },
+          { "id": "diff_omega", "type": "Sum", "params": { "signs": "+-", "width": 1 } },
+          { "id": "gain_ks", "type": "Gain", "params": { "k": 10.0, "width": 1 } },
+          { "id": "gain_bs", "type": "Gain", "params": { "k": 0.2, "width": 1 } },
+          { "id": "sum_torque_eje", "type": "Sum", "params": { "signs": "++", "width": 1 } },
+          { "id": "gain_btot_m", "type": "Gain", "params": { "k": 1.1, "width": 1 } },
+          { "id": "sum_dm", "type": "Sum", "params": { "signs": "+--", "width": 1 } },
+          { "id": "gain_inv_jm", "type": "Gain", "params": { "k": 2.0, "width": 1 } },
+          { "id": "gain_bl", "type": "Gain", "params": { "k": 0.1, "width": 1 } },
+          { "id": "sum_dl", "type": "Sum", "params": { "signs": "+-", "width": 1 } },
+          { "id": "gain_inv_jl", "type": "Gain", "params": { "k": 1.0, "width": 1 } },
+          { "id": "out_wl", "type": "OutPort", "params": { "width": 1 } }
+        ],
+        "connections": [
+          { "from": "int_thetam", "from_port": 0, "to": "diff_theta", "to_port": 0 },
+          { "from": "int_thetal", "from_port": 0, "to": "diff_theta", "to_port": 1 },
+          { "from": "int_wm", "from_port": 0, "to": "diff_omega", "to_port": 0 },
+          { "from": "int_wl", "from_port": 0, "to": "diff_omega", "to_port": 1 },
+          { "from": "diff_theta", "from_port": 0, "to": "gain_ks", "to_port": 0 },
+          { "from": "diff_omega", "from_port": 0, "to": "gain_bs", "to_port": 0 },
+          { "from": "gain_ks", "from_port": 0, "to": "sum_torque_eje", "to_port": 0 },
+          { "from": "gain_bs", "from_port": 0, "to": "sum_torque_eje", "to_port": 1 },
+          { "from": "int_wm", "from_port": 0, "to": "gain_btot_m", "to_port": 0 },
+          { "from": "in_v", "from_port": 0, "to": "sum_dm", "to_port": 0 },
+          { "from": "gain_btot_m", "from_port": 0, "to": "sum_dm", "to_port": 1 },
+          { "from": "sum_torque_eje", "from_port": 0, "to": "sum_dm", "to_port": 2 },
+          { "from": "sum_dm", "from_port": 0, "to": "gain_inv_jm", "to_port": 0 },
+          { "from": "gain_inv_jm", "from_port": 0, "to": "int_wm", "to_port": 0 },
+          { "from": "int_wm", "from_port": 0, "to": "int_thetam", "to_port": 0 },
+          { "from": "int_wl", "from_port": 0, "to": "gain_bl", "to_port": 0 },
+          { "from": "sum_torque_eje", "from_port": 0, "to": "sum_dl", "to_port": 0 },
+          { "from": "gain_bl", "from_port": 0, "to": "sum_dl", "to_port": 1 },
+          { "from": "sum_dl", "from_port": 0, "to": "gain_inv_jl", "to_port": 0 },
+          { "from": "gain_inv_jl", "from_port": 0, "to": "int_wl", "to_port": 0 },
+          { "from": "int_wl", "from_port": 0, "to": "int_thetal", "to_port": 0 },
+          { "from": "int_wl", "from_port": 0, "to": "out_wl", "to_port": 0 }
+        ]
+      }
+    },
+    {
+      "id": "grabadora",
+      "type": "FileSink",
+      "params": { "filename": "control_motor.csv", "interval": 0.05, "width": 2 }
+    },
+    { "id": "mux_save", "type": "Mux", "params": { "input_widths": [1, 1] } }
+  ],
+  "connections": [
+    { "from": "referencia", "from_port": 0, "to": "controlador", "to_port": 0 },
+    { "from": "planta", "from_port": 0, "to": "controlador", "to_port": 1 },
+    { "from": "controlador", "from_port": 0, "to": "planta", "to_port": 0 },
+    { "from": "referencia", "from_port": 0, "to": "mux_save", "to_port": 0 },
+    { "from": "planta", "from_port": 0, "to": "mux_save", "to_port": 1 },
+    { "from": "mux_save", "from_port": 0, "to": "grabadora", "to_port": 0 }
+  ]
+}
