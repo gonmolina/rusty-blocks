@@ -1,4 +1,4 @@
-use crate::system::{BlockId, System};
+use crate::system::{BlockId, Connection, System};
 
 pub struct EulerSolver {
     pub t: f64,
@@ -6,6 +6,8 @@ pub struct EulerSolver {
     pub outputs: Vec<Vec<Vec<f64>>>,  // [block][port][signal]
     execution_order: Vec<BlockId>,
     block_state_offsets: Vec<usize>,
+    // Pre-indexed connections for each block to avoid O(N^2) search
+    block_input_connections: Vec<Vec<Connection>>,
 }
 
 impl EulerSolver {
@@ -15,6 +17,7 @@ impl EulerSolver {
         let mut x = Vec::new();
         let mut block_state_offsets = vec![0; system.blocks.len()];
         let mut outputs = Vec::new();
+        let mut block_input_connections = vec![Vec::new(); system.blocks.len()];
 
         let mut current_offset = 0;
         for (i, block) in system.blocks.iter().enumerate() {
@@ -35,12 +38,18 @@ impl EulerSolver {
             outputs.push(b_outputs);
         }
 
+        // --- Pre-index connections ---
+        for &conn in &system.connections {
+            block_input_connections[conn.to_block].push(conn);
+        }
+
         Ok(Self {
             t: 0.0,
             x,
             outputs,
             execution_order,
             block_state_offsets,
+            block_input_connections,
         })
     }
 
@@ -57,28 +66,34 @@ impl EulerSolver {
     fn compute_derivatives_internal(
         execution_order: &[BlockId],
         block_state_offsets: &[usize],
+        block_input_connections: &[Vec<Connection>], // Use pre-indexed connections
         system: &System,
         t: f64,
         x: &[f64],
         outputs: &mut Vec<Vec<Vec<f64>>>,
         inputs: &mut Vec<Vec<Vec<f64>>>,
     ) -> Vec<f64> {
+        // 1. Calculate outputs in topological order
         for &id in execution_order {
             let block = &system.blocks[id];
-            for conn in &system.connections {
-                if conn.to_block == id {
-                    let source_data = &outputs[conn.from_block][conn.from_port];
-                    inputs[conn.to_block][conn.to_port].copy_from_slice(source_data);
-                }
+
+            // Fill inputs using the pre-indexed list for THIS block ONLY
+            for conn in &block_input_connections[id] {
+                let source_data = &outputs[conn.from_block][conn.from_port];
+                inputs[id][conn.to_port].copy_from_slice(source_data);
             }
+
             let n_s = block.num_states();
             let offset = block_state_offsets[id];
             let b_states = &x[offset..offset + n_s];
+            
             let u_refs: Vec<&[f64]> = inputs[id].iter().map(|v| v.as_slice()).collect();
             let mut y_refs: Vec<&mut [f64]> = outputs[id].iter_mut().map(|v| v.as_mut_slice()).collect();
+            
             block.outputs(t, b_states, &u_refs, &mut y_refs);
         }
 
+        // 2. Calculate derivatives
         let mut dx_global = vec![0.0; x.len()];
         for (id, block) in system.blocks.iter().enumerate() {
             let n_s = block.num_states();
@@ -86,8 +101,10 @@ impl EulerSolver {
                 let offset = block_state_offsets[id];
                 let b_states = &x[offset..offset + n_s];
                 let mut b_dx = vec![0.0; n_s];
+                
                 let u_refs: Vec<&[f64]> = inputs[id].iter().map(|v| v.as_slice()).collect();
                 block.derivatives(t, b_states, &u_refs, &mut b_dx);
+                
                 dx_global[offset..offset + n_s].copy_from_slice(&b_dx);
             }
         }
@@ -95,7 +112,12 @@ impl EulerSolver {
     }
 
     fn compute_derivatives(&self, system: &System, t: f64, x: &[f64], outputs: &mut Vec<Vec<Vec<f64>>>, inputs: &mut Vec<Vec<Vec<f64>>>) -> Vec<f64> {
-        Self::compute_derivatives_internal(&self.execution_order, &self.block_state_offsets, system, t, x, outputs, inputs)
+        Self::compute_derivatives_internal(
+            &self.execution_order, 
+            &self.block_state_offsets, 
+            &self.block_input_connections, 
+            system, t, x, outputs, inputs
+        )
     }
 
     fn create_inputs_buffer(&self, system: &System) -> Vec<Vec<Vec<f64>>> {
@@ -114,8 +136,6 @@ impl EulerSolver {
         let mut dt = suggested_dt;
         for block in &system.blocks {
             if let Some(t_event) = block.next_event(self.t) {
-                // If event is very close to current time, it might be the one we just processed.
-                // We look for events strictly in the future.
                 if t_event > self.t + 1e-10 {
                     dt = dt.min(t_event - self.t);
                 }
@@ -138,7 +158,6 @@ impl EulerSolver {
         if self.t == 0.0 {
             let mut inputs = self.create_inputs_buffer(system);
             let mut outputs = self.outputs.clone();
-            // Force one calculation at t=0 to have correct inputs/outputs for sinks
             self.compute_derivatives(system, 0.0, &self.x, &mut outputs, &mut inputs);
             self.outputs = outputs;
             self.finalize_step(system, &inputs);
