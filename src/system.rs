@@ -220,10 +220,22 @@ impl Subsystem {
             u_offset += w;
         }
         for &id in &self.execution_order {
-            let block = &self.system.blocks[id];
+            // Resolve connections to this block
             for conn in &self.internal_connections {
                 if conn.to_u_idx >= self.block_u_offsets[id] && conn.to_u_idx < self.block_u_offsets[id] + block.total_input_width() {
-                    let (src_ptr, dst_ptr) = unsafe { (y_buf.as_ptr().add(conn.from_y_idx), u_buf.as_mut_ptr().add(conn.to_u_idx)) };
+                    // RATIONALE: Direct pointer movement avoids expensive bounds checking in 
+                    // deeply nested subsystems and matches the global solver optimization.
+                    //
+                    // SAFETY:
+                    // 1. Internal offsets are pre-calculated during Subsystem construction and match widths.
+                    // 2. internal_u and internal_y are separate vectors (no overlap).
+                    // 3. Topological execution order ensures signal source validity.
+                    let (src_ptr, dst_ptr) = unsafe { 
+                        (
+                            y_buf.as_ptr().add(conn.from_y_idx), 
+                            u_buf.as_mut_ptr().add(conn.to_u_idx)
+                        ) 
+                    };
                     unsafe { std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, conn.width); }
                 }
             }

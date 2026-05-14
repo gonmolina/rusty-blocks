@@ -97,8 +97,13 @@ impl EulerSolver {
 
             // Update inputs for this block from other blocks' outputs
             for conn in &input_conns[id] {
-                // SAFETY: In a valid topological order, from_block's output 
-                // is already calculated if it's a direct dependency.
+                // RATIONALE: Using pointers and copy_nonoverlapping (memcpy) avoids 
+                // repeated bounds checks in the inner loop and provides peak throughput.
+                //
+                // SAFETY: 
+                // 1. Offsets and widths are pre-calculated and validated during Solver construction.
+                // 2. y_buf (outputs) and u_buf (inputs) are separate allocations; they never overlap.
+                // 3. Topological order guarantees that y_buf[global_from_idx] contains valid data.
                 let (src_ptr, dst_ptr) = unsafe {
                     (
                         y_buf.as_ptr().add(conn.global_from_idx),
