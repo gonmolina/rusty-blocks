@@ -27,10 +27,10 @@ impl Block for Constant {
     fn input_width(&self, _port: usize) -> usize { 0 }
     fn output_width(&self, _port: usize) -> usize { self.value.len() }
 
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
 
-    fn outputs(&self, _t: f64, _x: &[f64], _u: &[&[f64]], y: &mut [&mut [f64]]) {
-        y[0].copy_from_slice(&self.value);
+    fn outputs(&self, _t: f64, _x: &[f64], _u: &[f64], y: &mut [f64]) {
+        y.copy_from_slice(&self.value);
     }
 
     fn has_direct_feedthrough(&self) -> bool { false }
@@ -64,10 +64,10 @@ impl Block for Step {
     fn input_width(&self, _port: usize) -> usize { 0 }
     fn output_width(&self, _port: usize) -> usize { 1 }
 
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
 
-    fn outputs(&self, t: f64, _x: &[f64], _u: &[&[f64]], y: &mut [&mut [f64]]) {
-        y[0][0] = if t < self.step_time { self.initial_value } else { self.final_value };
+    fn outputs(&self, t: f64, _x: &[f64], _u: &[f64], y: &mut [f64]) {
+        y[0] = if t < self.step_time { self.initial_value } else { self.final_value };
     }
 
     fn has_direct_feedthrough(&self) -> bool { false }

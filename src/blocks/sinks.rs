@@ -11,7 +11,6 @@ pub struct FileSink {
     interval: f64,
     width: usize,
     writer: RefCell<Option<BufWriter<File>>>,
-    // Store as Option to handle the first point (t=0) correctly
     last_save_t: RefCell<Option<f64>>,
 }
 
@@ -54,27 +53,26 @@ impl Block for FileSink {
     fn input_width(&self, _port: usize) -> usize { self.width }
     fn output_width(&self, _port: usize) -> usize { 0 }
 
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
-    fn outputs(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _y: &mut [&mut [f64]]) {}
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
+    fn outputs(&self, _t: f64, _x: &[f64], _u: &[f64], _y: &mut [f64]) {}
 
     fn next_event(&self, t: f64) -> Option<f64> {
         if self.interval <= 0.0 { return None; }
         
         match *self.last_save_t.borrow() {
-            None => Some(0.0), // First event is always at t=0
+            None => Some(0.0),
             Some(_) => {
-                // Next event is at the next grid point: ceil( (t + eps) / interval ) * interval
                 let next = ((t / self.interval + 1e-9).floor() + 1.0) * self.interval;
                 Some(next)
             }
         }
     }
 
-    fn on_step_end(&self, t: f64, _x: &[f64], u: &[&[f64]]) {
+    fn on_step_end(&self, t: f64, _x: &[f64], u: &[f64]) {
         let mut last_t_opt = self.last_save_t.borrow_mut();
         
         let should_save = match *last_t_opt {
-            None => true, // Always save the first point (usually t=0)
+            None => true,
             Some(last_t) => t >= last_t + self.interval - 1e-9,
         };
 
@@ -82,7 +80,7 @@ impl Block for FileSink {
             self.ensure_file_is_open();
             if let Some(ref mut writer) = *self.writer.borrow_mut() {
                 write!(writer, "{:.6}", t).unwrap();
-                for val in u[0] {
+                for &val in u {
                     write!(writer, ",{:.6}", val).unwrap();
                 }
                 writeln!(writer).unwrap();

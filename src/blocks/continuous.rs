@@ -27,12 +27,12 @@ impl Block for Integrator {
     fn input_width(&self, _port: usize) -> usize { self.initial_conditions.len() }
     fn output_width(&self, _port: usize) -> usize { self.initial_conditions.len() }
 
-    fn derivatives(&self, _t: f64, _x: &[f64], u: &[&[f64]], dx: &mut [f64]) {
-        dx.copy_from_slice(u[0]);
+    fn derivatives(&self, _t: f64, _x: &[f64], u: &[f64], dx: &mut [f64]) {
+        dx.copy_from_slice(u);
     }
 
-    fn outputs(&self, _t: f64, x: &[f64], _u: &[&[f64]], y: &mut [&mut [f64]]) {
-        y[0].copy_from_slice(x);
+    fn outputs(&self, _t: f64, x: &[f64], _u: &[f64], y: &mut [f64]) {
+        y.copy_from_slice(x);
     }
 
     fn has_direct_feedthrough(&self) -> bool { false }

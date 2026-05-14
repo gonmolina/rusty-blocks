@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 pub mod continuous;
 pub mod math;
 pub mod ports;
@@ -7,11 +6,11 @@ pub mod sinks;
 pub mod sources;
 
 pub use continuous::Integrator;
-pub use math::Gain;
+pub use math::{Gain, Sum};
 pub use ports::{InPort, OutPort};
-pub use routing::Mux;
+pub use routing::{Demux, Mux};
 pub use sinks::FileSink;
-pub use sources::Constant;
+pub use sources::{Constant, Step};
 
 use std::collections::HashMap;
 use serde_json::Value;
@@ -66,22 +65,22 @@ pub trait Block {
     fn input_width(&self, port: usize) -> usize;
     fn output_width(&self, port: usize) -> usize;
     
-    fn derivatives(&self, t: f64, x: &[f64], u: &[&[f64]], dx: &mut [f64]);
-    fn outputs(&self, t: f64, x: &[f64], u: &[&[f64]], y: &mut [&mut [f64]]);
+    fn total_input_width(&self) -> usize {
+        (0..self.num_inputs()).map(|p| self.input_width(p)).sum()
+    }
+    fn total_output_width(&self) -> usize {
+        (0..self.num_outputs()).map(|p| self.output_width(p)).sum()
+    }
+
+    fn derivatives(&self, t: f64, x: &[f64], u: &[f64], dx: &mut [f64]);
+    fn outputs(&self, t: f64, x: &[f64], u: &[f64], y: &mut [f64]);
     
     fn has_direct_feedthrough(&self) -> bool;
     fn get_initial_conditions(&self, x: &mut [f64]);
 
-    // --- Event Handling & Finalization ---
-
-    /// Returns the next scheduled time for an event in this block (e.g., a sampling time).
     fn next_event(&self, _t: f64) -> Option<f64> { None }
+    fn on_step_end(&self, _t: f64, _x: &[f64], _u: &[f64]) {}
 
-    /// Called by the solver when an integration step is successfully accepted.
-    /// This is where side-effects (like writing to file or UI update) should happen.
-    fn on_step_end(&self, _t: f64, _x: &[f64], _u: &[&[f64]]) {}
-
-    // Helper methods for Subsystems
     fn is_in_port(&self) -> bool { false }
     fn is_out_port(&self) -> bool { false }
     fn downcast_ref_inport(&self) -> Option<&InPort> { None }

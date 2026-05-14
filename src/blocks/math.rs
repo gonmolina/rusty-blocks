@@ -28,11 +28,11 @@ impl Block for Gain {
     fn input_width(&self, _port: usize) -> usize { self.width }
     fn output_width(&self, _port: usize) -> usize { self.width }
 
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
 
-    fn outputs(&self, _t: f64, _x: &[f64], u: &[&[f64]], y: &mut [&mut [f64]]) {
+    fn outputs(&self, _t: f64, _x: &[f64], u: &[f64], y: &mut [f64]) {
         for i in 0..self.width {
-            y[0][i] = u[0][i] * self.k;
+            y[i] = u[i] * self.k;
         }
     }
 
@@ -66,19 +66,20 @@ impl Block for Sum {
     fn input_width(&self, _port: usize) -> usize { self.width }
     fn output_width(&self, _port: usize) -> usize { self.width }
 
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
 
-    fn outputs(&self, _t: f64, _x: &[f64], u: &[&[f64]], y: &mut [&mut [f64]]) {
+    fn outputs(&self, _t: f64, _x: &[f64], u: &[f64], y: &mut [f64]) {
         for j in 0..self.width {
             let mut sum = 0.0;
             for (i, sign) in self.signs.chars().enumerate() {
+                let u_idx = i * self.width + j;
                 match sign {
-                    '+' => sum += u[i][j],
-                    '-' => sum -= u[i][j],
+                    '+' => sum += u[u_idx],
+                    '-' => sum -= u[u_idx],
                     _ => {}
                 }
             }
-            y[0][j] = sum;
+            y[j] = sum;
         }
     }
 

@@ -29,15 +29,11 @@ impl Block for Mux {
     fn input_width(&self, port: usize) -> usize { self.input_widths[port] }
     fn output_width(&self, _port: usize) -> usize { self.total_width }
 
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
 
-    fn outputs(&self, _t: f64, _x: &[f64], u: &[&[f64]], y: &mut [&mut [f64]]) {
-        let mut offset = 0;
-        for i in 0..self.input_widths.len() {
-            let w = self.input_widths[i];
-            y[0][offset..offset + w].copy_from_slice(u[i]);
-            offset += w;
-        }
+    fn outputs(&self, _t: f64, _x: &[f64], u: &[f64], y: &mut [f64]) {
+        // Since u is already a flat concatenation of all ports, Mux is just a copy
+        y.copy_from_slice(u);
     }
 
     fn has_direct_feedthrough(&self) -> bool { true }
@@ -71,15 +67,11 @@ impl Block for Demux {
     fn input_width(&self, _port: usize) -> usize { self.total_input_width }
     fn output_width(&self, port: usize) -> usize { self.output_widths[port] }
 
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
 
-    fn outputs(&self, _t: f64, _x: &[f64], u: &[&[f64]], y: &mut [&mut [f64]]) {
-        let mut offset = 0;
-        for i in 0..self.output_widths.len() {
-            let w = self.output_widths[i];
-            y[i].copy_from_slice(&u[0][offset..offset + w]);
-            offset += w;
-        }
+    fn outputs(&self, _t: f64, _x: &[f64], u: &[f64], y: &mut [f64]) {
+        // Since y is already a flat concatenation of all ports, Demux is just a copy
+        y.copy_from_slice(u);
     }
 
     fn has_direct_feedthrough(&self) -> bool { true }

@@ -31,9 +31,9 @@ impl Block for InPort {
     fn num_outputs(&self) -> usize { 1 }
     fn input_width(&self, _port: usize) -> usize { 0 }
     fn output_width(&self, _port: usize) -> usize { self.width }
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
-    fn outputs(&self, _t: f64, _x: &[f64], _u: &[&[f64]], y: &mut [&mut [f64]]) {
-        y[0].copy_from_slice(&self.value.borrow());
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
+    fn outputs(&self, _t: f64, _x: &[f64], _u: &[f64], y: &mut [f64]) {
+        y.copy_from_slice(&self.value.borrow());
     }
     fn has_direct_feedthrough(&self) -> bool { false }
     fn get_initial_conditions(&self, _x: &mut [f64]) {}
@@ -69,9 +69,9 @@ impl Block for OutPort {
     fn num_outputs(&self) -> usize { 0 }
     fn input_width(&self, _port: usize) -> usize { self.width }
     fn output_width(&self, _port: usize) -> usize { 0 }
-    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[&[f64]], _dx: &mut [f64]) {}
-    fn outputs(&self, _t: f64, _x: &[f64], u: &[&[f64]], _y: &mut [&mut [f64]]) {
-        self.value.borrow_mut().copy_from_slice(u[0]);
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
+    fn outputs(&self, _t: f64, _x: &[f64], u: &[f64], _y: &mut [f64]) {
+        self.value.borrow_mut().copy_from_slice(u);
     }
     fn has_direct_feedthrough(&self) -> bool { true }
     fn get_initial_conditions(&self, _x: &mut [f64]) {}

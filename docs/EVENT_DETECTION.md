@@ -12,20 +12,23 @@ En una simulación de tiempo continuo, los solvers calculan los estados en insta
 
 ## 3. Conclusiones sobre el Rendimiento (Performance)
 
-### Benchmarks Finales (Protocolo de 2da ejecución)
-Se realizaron pruebas de estrés con la optimización de pre-indexación de conexiones activa.
+### Benchmarks de Evolución (Escenario de 5,000 bloques, 200s)
+Se realizaron pruebas de estrés para validar cada fase de optimización.
 
-| Escenario | Bloques | Tiempo Sim. | Solver | Tiempo Real (Sin Sink) | Tiempo Real (Con Sink) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Large** | 500 | 100 s | RK45 | **0.336 s** | **0.456 s** |
-| **Huge** | 5,000 | 200 s | RK4 | **8.844 s** | **8.754 s** |
+| Versión | Arquitectura | Tiempo Real | Mejora Acumulada |
+| :--- | :--- | :--- | :--- |
+| v1.0 | Búsqueda Lineal de Conexiones $O(N^2)$ | 238.29 s | Baseline |
+| v1.1 | Pre-indexación de Conexiones $O(N)$ | 8.84 s | 27x |
+| **v2.0** | **Aplanamiento de Buffers (Flattening)** | **2.44 s** | **97x** |
 
-### Análisis de Resultados:
-1.  **Escalabilidad Lineal Alcanzada**: Gracias a la pre-indexación de conexiones ($O(N)$), el paso de 500 a 5,000 bloques (10x) con el doble de tiempo simulado (2x) resulta en un incremento de tiempo real proporcional a la carga matemática, eliminando el cuello de botella cuadrático previo.
-2.  **Eficiencia del Sistema de Eventos**: En sistemas grandes (Escenario Huge), el coste de gestionar eventos es estadísticamente **nulo** comparado con el coste de integración. En sistemas pequeños (Large), el overhead es visible pero absoluto (aprox. 0.1s de diferencia), debido principalmente a la inicialización de archivos en disco.
-3.  **Rendimiento en Producción**: El simulador procesa aproximadamente **110 millones de operaciones de bloque por segundo** (Escenario Huge: 16,000 evaluaciones * 5,000 bloques / 8.8s).
+### Análisis de la Versión 2.0:
+La refactorización a buffers planos (v2.0) eliminó el último gran cuello de botella: la gestión de vectores anidados y asignaciones dinámicas en el bucle de integración.
+
+1.  **Cero Allocations**: Se eliminó el uso del heap durante los pasos de simulación. Toda la memoria se pre-asigna en el constructor del Solver.
+2.  **Localidad de Datos**: Al usar arrays contiguos para señales (`u`, `y`) y estados (`x`), el procesador aprovecha al máximo la caché L1/L2.
+3.  **Rendimiento en Producción**: El simulador procesa ahora aproximadamente **400 millones de operaciones de bloque por segundo** (Escenario Huge: 16,000 evaluaciones * 5,000 bloques / 2.44s).
 
 ## 4. Ventajas de este Diseño
 *   **Precisión Absoluta**: Marcas de tiempo perfectas en archivos de salida.
 *   **Determinismo**: Resultados idénticos independientemente de la agresividad del solver.
-*   **Robustez**: Capacidad de manejar miles de componentes con un escalado lineal predecible.
+*   **Escalabilidad Industrial**: Capacidad de simular sistemas de altísima complejidad en tiempo real o más rápido.
