@@ -1,54 +1,9 @@
-mod blocks;
-mod solver;
-mod system;
-
-use blocks::BlockRegistry;
-use serde::{Deserialize, Serialize};
-use solver::EulerSolver;
+use bloques::blocks::BlockRegistry;
+use bloques::solver::EulerSolver;
+use bloques::system::{Subsystem, System, SystemConfig};
+use bloques::{SimulationParams, SolverType};
 use std::env;
 use std::fs;
-use system::{Subsystem, System, SystemConfig};
-
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
-pub enum SolverType {
-    Euler,
-    RK4,
-    RK45, // Adaptive Runge-Kutta 4-5
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SimulationParams {
-    pub dt: f64, // For Euler/RK4 it's the fixed step. For RK45 it's the initial/max step.
-    pub t_final: f64,
-    #[serde(default = "default_solver")]
-    pub solver: SolverType,
-    #[serde(default = "default_atol")]
-    pub atol: f64,
-    #[serde(default = "default_rtol")]
-    pub rtol: f64,
-}
-
-fn default_solver() -> SolverType {
-    SolverType::Euler
-}
-fn default_atol() -> f64 {
-    1e-6
-}
-fn default_rtol() -> f64 {
-    1e-3
-}
-
-impl Default for SimulationParams {
-    fn default() -> Self {
-        Self {
-            dt: 0.01,
-            t_final: 10.0,
-            solver: SolverType::Euler,
-            atol: 1e-6,
-            rtol: 1e-3,
-        }
-    }
-}
 
 fn main() {
     let args: Vec<String> = env::args().collect();

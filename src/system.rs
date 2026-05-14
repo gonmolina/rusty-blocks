@@ -220,6 +220,7 @@ impl Subsystem {
             u_offset += w;
         }
         for &id in &self.execution_order {
+            let block = &self.system.blocks[id];
             // Resolve connections to this block
             for conn in &self.internal_connections {
                 if conn.to_u_idx >= self.block_u_offsets[id] && conn.to_u_idx < self.block_u_offsets[id] + block.total_input_width() {
