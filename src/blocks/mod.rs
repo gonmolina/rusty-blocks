@@ -53,6 +53,7 @@ impl BlockRegistry {
         r.register("InPort", ports::InPort::build);
         r.register("OutPort", ports::OutPort::build);
         r.register("FileSink", sinks::FileSink::build);
+        r.register("Scope", sinks::Scope::build);
         r
     }
 }

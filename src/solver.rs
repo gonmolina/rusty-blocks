@@ -264,6 +264,14 @@ impl EulerSolver {
         let offset = self.block_state_offsets[block_id];
         &self.x[offset..offset + num_states]
     }
+
+    pub fn get_outputs(&self) -> &[f64] {
+        &self.global_y
+    }
+
+    pub fn get_y_offset(&self, block_idx: usize) -> usize {
+        self.block_y_offsets[block_idx]
+    }
 }
 
 #[cfg(test)]

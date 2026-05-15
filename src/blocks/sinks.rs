@@ -34,7 +34,8 @@ impl FileSink {
 
     fn ensure_file_is_open(&self) {
         if self.writer.borrow().is_none() {
-            let file = File::create(&self.filename).expect("Could not create sink file");
+            let path = std::path::Path::new("sim_results").join(&self.filename);
+            let file = File::create(&path).expect("Could not create sink file");
             let mut writer = BufWriter::new(file);
             write!(writer, "t").unwrap();
             for i in 0..self.width {
@@ -92,3 +93,34 @@ impl Block for FileSink {
     fn has_direct_feedthrough(&self) -> bool { true }
     fn get_initial_conditions(&self, _x: &mut [f64]) {}
 }
+
+/// A visual scope block (no-op in engine).
+pub struct Scope {
+    width: usize,
+}
+
+impl Scope {
+    pub fn new(width: usize) -> Self {
+        Self { width }
+    }
+
+    pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
+        #[derive(Deserialize)]
+        struct Params { width: usize }
+        let p: Params = serde_json::from_value(v).unwrap_or(Params { width: 1 });
+        Ok(Box::new(Self::new(p.width)))
+    }
+}
+
+impl Block for Scope {
+    fn num_states(&self) -> usize { 0 }
+    fn num_inputs(&self) -> usize { 1 }
+    fn num_outputs(&self) -> usize { 0 }
+    fn input_width(&self, _port: usize) -> usize { self.width }
+    fn output_width(&self, _port: usize) -> usize { 0 }
+    fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
+    fn outputs(&self, _t: f64, _x: &[f64], _u: &[f64], _y: &mut [f64]) {}
+    fn has_direct_feedthrough(&self) -> bool { true }
+    fn get_initial_conditions(&self, _x: &mut [f64]) {}
+}
+

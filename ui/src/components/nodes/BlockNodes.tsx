@@ -1,6 +1,6 @@
 import type { NodeProps } from 'reactflow';
 import { BaseNode } from './BaseNode';
-import { Activity, Gauge, Hash, PlusCircle, StepForward, ArrowRightLeft, LogIn, LogOut, Disc, Laptop } from 'lucide-react';
+import { Activity, Gauge, Hash, PlusCircle, StepForward, ArrowRightLeft, LogIn, LogOut, Disc, Laptop, Monitor } from 'lucide-react';
 
 export const IntegratorNode = ({ id, data, selected }: NodeProps) => (
   <BaseNode id={id} title="Integrator" name={data.params?.name} icon={<Activity size={14} />} selected={selected} rotation={data.rotation} inputLabels={["u"]} outputLabels={["y"]}>
@@ -103,6 +103,23 @@ export const SubsystemNode = ({ id, data, selected }: NodeProps) => (
       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center leading-tight">
         {data.params?.name || 'Hierarchical Block'}
       </span>
+    </div>
+  </BaseNode>
+);
+
+export const ScopeNode = ({ id, data, selected }: NodeProps) => (
+  <BaseNode id={id} title="Scope" name={data.params?.name} icon={<Monitor size={14} />} outputs={0} selected={selected} rotation={data.rotation} inputLabels={["in"]}>
+    <div className="flex flex-col items-center gap-1">
+      <div className="w-12 h-8 bg-slate-950 rounded border border-slate-800 overflow-hidden relative shadow-inner">
+        <div className="absolute inset-0 flex items-center justify-around opacity-10">
+          <div className="w-[1px] h-full bg-green-500" />
+          <div className="w-[1px] h-full bg-green-500" />
+        </div>
+        <svg viewBox="0 0 40 20" className="w-full h-full stroke-green-500 fill-none stroke-[1.5] drop-shadow-[0_0_2px_rgba(34,197,94,0.5)]">
+          <path d="M0 10 Q 5 0, 10 10 T 20 10 T 30 10 T 40 10" />
+        </svg>
+      </div>
+      <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Double click</span>
     </div>
   </BaseNode>
 );

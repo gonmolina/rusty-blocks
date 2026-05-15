@@ -13,7 +13,6 @@ import type {
   Connection,
   Edge,
   Node,
-  OnSelectionChangeParams
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -28,12 +27,14 @@ import {
   InPortNode, 
   OutPortNode, 
   FileSinkNode, 
-  SubsystemNode 
+  SubsystemNode,
+  ScopeNode
 } from './components/nodes/BlockNodes';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { Sidebar } from './components/Sidebar';
 import { ResultsChart } from './components/ResultsChart';
 import { SimulationSettings, type SimulationParams } from './components/SimulationSettings';
+import { ScopeModal } from './components/ScopeModal';
 import { exportProject, downloadJson, handleLoad, convertToSystemConfig } from './utils/persistence';
 
 interface ViewLevel {
@@ -64,8 +65,10 @@ const FlowEditor = () => {
   const [edges, setEdges, onEdgesChange] = useEdgesState(currentLevel.edges);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [results, setResults] = useState<any[]>([]);
+  const [yOffsets, setYOffsets] = useState<Record<string, number>>({});
   const [isSimulating, setIsSimulating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [scopeModalState, setScopeModalState] = useState<{ isOpen: boolean; title: string; data: any[] }>({ isOpen: false, title: '', data: [] });
   const [simParams, setSimParams] = useState<SimulationParams>({
     dt: 0.1, t_final: 10.0, solver: 'RK45', atol: 1e-8, rtol: 1e-4
   });
@@ -76,6 +79,31 @@ const FlowEditor = () => {
     setNodes(currentLevel.nodes);
     setEdges(currentLevel.edges);
   }, [currentLevel.id, setNodes, setEdges]);
+
+  useEffect(() => {
+    setViewStack(prev => {
+      const next = [...prev];
+      const currentIndex = next.length - 1;
+      if (currentIndex < 0) return prev;
+      if (next[currentIndex].nodes === nodes && next[currentIndex].edges === edges) return prev;
+      next[currentIndex] = { ...next[currentIndex], nodes, edges };
+      let i = currentIndex;
+      while (i > 0) {
+        const parentIdx = i - 1;
+        const currentId = next[i].id;
+        const currentNodes = next[i].nodes;
+        const currentEdges = next[i].edges;
+        next[parentIdx].nodes = next[parentIdx].nodes.map(n => {
+          if (n.id === currentId) {
+            return { ...n, data: { ...n.data, internalState: { nodes: currentNodes, edges: currentEdges } } };
+          }
+          return n;
+        });
+        i--;
+      }
+      return next;
+    });
+  }, [nodes, edges]);
 
   const nodeTypes = useMemo(() => ({
     Constant: ConstantNode,
@@ -89,6 +117,7 @@ const FlowEditor = () => {
     OutPort: OutPortNode,
     FileSink: FileSinkNode,
     Subsystem: SubsystemNode,
+    Scope: ScopeNode,
   }), []);
 
   const onConnect = useCallback(
@@ -96,12 +125,11 @@ const FlowEditor = () => {
     [setEdges]
   );
 
-  const onNodeDoubleClick = useCallback((_event: React.MouseEvent, node: Node) => {
+  const onNodeDoubleClick = useCallback(async (_event: React.MouseEvent, node: Node) => {
     if (node.type === 'Subsystem') {
       setViewStack(prev => {
         const next = [...prev];
         next[next.length - 1] = { ...currentLevel, nodes, edges };
-        
         const internalState = node.data.internalState || { nodes: [], edges: [] };
         next.push({
           id: node.id,
@@ -111,21 +139,37 @@ const FlowEditor = () => {
         });
         return next;
       });
+    } else if (node.type === 'Scope') {
+      setScopeModalState({ 
+        isOpen: true, 
+        title: node.data.params?.name || "Scope Viewer", 
+        data: getScopeData(node.id) 
+      });
+    } else if (node.type === 'FileSink') {
+      const filename = node.data.params?.filename || 'output.csv';
+      const apiHost = window.location.hostname;
+      try {
+        const response = await fetch(`http://${apiHost}:3000/results/${filename}`);
+        if (!response.ok) throw new Error("File not found");
+        const data = await response.json();
+        setScopeModalState({ 
+          isOpen: true, 
+          title: `File: ${filename}`, 
+          data: data 
+        });
+      } catch (err) {
+        alert(`No se pudo recuperar el archivo ${filename}. ¿Ya ejecutaste la simulación?`);
+      }
     }
-  }, [nodes, edges, currentLevel]);
+  }, [nodes, edges, currentLevel, results, yOffsets]);
 
   const navigateBack = (index: number) => {
     if (index === viewStack.length - 1) return;
-    
     setViewStack(prev => {
       const next = [...prev];
-      const parentLevelIndex = index;
-      
-      // Save current level state into the node in the viewStack before popping
-      const currentSubsystemId = viewStack[viewStack.length - 1].id;
-      
+      const currentSubId = prev[prev.length - 1].id;
       next[index].nodes = next[index].nodes.map(n => {
-        if (n.id === currentSubsystemId) {
+        if (n.id === currentSubId) {
           return { 
             ...n, 
             data: { 
@@ -141,7 +185,6 @@ const FlowEditor = () => {
         }
         return n;
       });
-      
       return next.slice(0, index + 1);
     });
   };
@@ -165,38 +208,39 @@ const FlowEditor = () => {
 
   const handleSimulate = async () => {
     setIsSimulating(true);
-    
-    // Al simular, siempre usamos la raíz (Main) y construimos recursivamente
-    // pero primero guardamos el nivel actual en el stack para no perder cambios.
-    let rootLevelNodes = viewStack[0].nodes;
-    let rootLevelEdges = viewStack[0].edges;
-    
-    if (viewStack.length > 1) {
-        // Si estamos dentro de un subsistema, actualizamos la referencia en la raíz antes de simular
-        const currentSubId = viewStack[viewStack.length - 1].id;
-        rootLevelNodes = rootLevelNodes.map(n => {
-            if (n.id === currentSubId) {
-                return { ...n, data: { ...n.data, internalState: { nodes, edges } } };
-            }
-            return n;
-        });
-    }
-
-    const system = convertToSystemConfig("Full System", rootLevelNodes, rootLevelEdges);
+    const rootLevel = viewStack[0];
+    const system = convertToSystemConfig("Full System", rootLevel.nodes, rootLevel.edges);
+    const apiHost = window.location.hostname;
+    const apiUrl = `http://${apiHost}:3000/simulate`;
 
     try {
-      const response = await fetch('http://localhost:3000/simulate', {
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ system, params: simParams }),
       });
       const data = await response.json();
       setResults(data.points);
+      setYOffsets(data.y_offsets);
     } catch (err) {
       alert("Error al conectar con el servidor de simulación");
     } finally {
       setIsSimulating(false);
     }
+  };
+
+  const getScopeData = (nodeId: string) => {
+    if (results.length === 0) return [];
+    const incomingEdge = edges.find(e => e.target === nodeId);
+    if (!incomingEdge) return [];
+    const sourceBlockId = incomingEdge.source;
+    const sourcePort = parseInt(incomingEdge.sourceHandle?.split('-')[1] || '0');
+    const offset = yOffsets[sourceBlockId];
+    if (offset === undefined) return [];
+    return results.map(p => ({
+      t: p.t,
+      signal: p.y[offset + sourcePort]
+    }));
   };
 
   return (
@@ -246,13 +290,20 @@ const FlowEditor = () => {
 
         {results.length > 0 && (
           <div className="h-1/3 bg-slate-50 p-4 relative overflow-hidden">
-             <button onClick={() => setResults([])} className="absolute top-6 right-6 z-20 text-xs font-bold text-slate-400 hover:text-slate-600 uppercase">Cerrar</button>
+             <button onClick={() => setResults([])} className="absolute top-6 right-6 z-20 text-xs font-bold text-slate-400 hover:text-slate-600 uppercase transition-colors">Cerrar</button>
             <ResultsChart data={results} />
           </div>
         )}
       </div>
 
       <SimulationSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} params={simParams} onUpdate={setSimParams} />
+      
+      <ScopeModal 
+        isOpen={scopeModalState.isOpen} 
+        onClose={() => setScopeModalState({ ...scopeModalState, isOpen: false })}
+        title={scopeModalState.title}
+        data={scopeModalState.data}
+      />
 
       {isSimulating && (
         <div className="absolute inset-0 z-[100] bg-slate-900/20 backdrop-blur-[2px] flex items-center justify-center">
@@ -285,6 +336,7 @@ const getDefaultParams = (type: string) => {
     case 'InPort': return { width: 1 };
     case 'OutPort': return { width: 1 };
     case 'Subsystem': return { name: "Subsystem", blocks: [], connections: [] };
+    case 'Scope': return { name: "Scope" };
     default: return {};
   }
 };

@@ -20,18 +20,29 @@ interface ResultsChartProps {
 }
 
 export const ResultsChart: React.FC<ResultsChartProps> = ({ data }) => {
-  if (!data || data.length === 0) return null;
+  if (!data || data.length === 0 || !data[0].x) return null;
 
   // Reformat data for Recharts: { t, x0, x1, ... }
   const chartData = data.map(point => {
     const entry: any = { t: parseFloat(point.t.toFixed(4)) };
-    point.x.forEach((val, i) => {
-      entry[`state_${i}`] = val;
-    });
+    if (point.x) {
+      point.x.forEach((val, i) => {
+        entry[`state_${i}`] = val;
+      });
+    }
     return entry;
   });
 
-  const numStates = data[0].x.length;
+  const numStates = data[0].x?.length || 0;
+  if (numStates === 0) {
+    return (
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xl h-full flex flex-col items-center justify-center text-slate-400">
+        <p className="text-xs font-bold uppercase tracking-widest">Simulación completada (Sin estados continuos)</p>
+        <p className="text-[10px]">Usa un Scope para ver señales algebraicas.</p>
+      </div>
+    );
+  }
+
   const colors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'];
 
   return (

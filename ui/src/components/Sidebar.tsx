@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Activity, Gauge, Hash, PlusCircle, Laptop, ArrowRightLeft, StepForward, Disc, LogIn, LogOut, Save, FolderOpen, Settings2, Play } from 'lucide-react';
+import { Activity, Gauge, Hash, PlusCircle, Laptop, ArrowRightLeft, StepForward, Disc, LogIn, LogOut, Save, FolderOpen, Settings2, Play, Monitor } from 'lucide-react';
 
 const blocks = [
   { type: 'Constant', label: 'Constant', icon: <Hash size={16} />, category: 'Sources' },
@@ -12,6 +12,7 @@ const blocks = [
   { type: 'InPort', label: 'InPort', icon: <LogIn size={16} />, category: 'Ports' },
   { type: 'OutPort', label: 'OutPort', icon: <LogOut size={16} />, category: 'Ports' },
   { type: 'FileSink', label: 'FileSink', icon: <Disc size={16} />, category: 'Sinks' },
+  { type: 'Scope', label: 'Scope', icon: <Monitor size={16} />, category: 'Sinks' },
   { type: 'Subsystem', label: 'Subsystem', icon: <Laptop size={16} />, category: 'Hierarchy' },
 ];
 

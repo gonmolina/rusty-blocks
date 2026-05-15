@@ -1,5 +1,6 @@
 use axum::{
-    routing::post,
+    extract::Path,
+    routing::{get, post},
     Json, Router,
 };
 use bloques::blocks::BlockRegistry;
@@ -8,7 +9,9 @@ use bloques::system::{Subsystem, System, SystemConfig};
 use bloques::{SimulationParams, SolverType};
 use serde::{Deserialize, Serialize};
 use tower_http::cors::CorsLayer;
+use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::fs::File;
 
 #[derive(Deserialize)]
 struct SimulationRequest {
@@ -20,59 +23,88 @@ struct SimulationRequest {
 struct SimulationPoint {
     t: f64,
     x: Vec<f64>,
+    y: Vec<f64>,
 }
 
 #[derive(Serialize)]
 struct SimulationResponse {
     points: Vec<SimulationPoint>,
+    y_offsets: HashMap<String, usize>,
+}
+
+async fn get_result(Path(filename): Path<String>) -> Result<Json<Vec<HashMap<String, f64>>>, String> {
+    let path = std::path::Path::new("sim_results").join(&filename);
+    let file = File::open(path).map_err(|e| format!("Could not open file: {}", e))?;
+    let reader = std::io::BufReader::new(file);
+    let mut csv_reader = csv::Reader::from_reader(reader);
+    
+    let mut results = Vec::new();
+    for result in csv_reader.deserialize() {
+        let record: HashMap<String, f64> = result.map_err(|e| format!("CSV Error: {}", e))?;
+        results.push(record);
+    }
+    
+    Ok(Json(results))
 }
 
 async fn simulate(Json(req): Json<SimulationRequest>) -> Json<SimulationResponse> {
+    println!("Recibida petición de simulación para: {}", req.system.name);
     let mut registry = BlockRegistry::std();
     registry.register("Subsystem", Subsystem::build);
 
-    let system = System::from_config(req.system, &registry);
+    let system = System::from_config(req.system.clone(), &registry);
     let mut solver = EulerSolver::new(&system).expect("Error initializing solver");
+
+    // Map block string IDs to their global output offsets
+    let mut y_offsets = HashMap::new();
+    for (i, b_config) in req.system.blocks.iter().enumerate() {
+        y_offsets.insert(b_config.id.clone(), solver.get_y_offset(i));
+    }
 
     let mut points = Vec::new();
     let mut t = 0.0;
     let mut current_dt = req.params.dt;
 
     // Record initial state
-    points.push(SimulationPoint { t, x: solver.x.clone() });
+    points.push(SimulationPoint { 
+        t, 
+        x: solver.x.clone(),
+        y: solver.get_outputs().to_vec(),
+    });
 
     match req.params.solver {
         SolverType::Euler => {
             while t < req.params.t_final {
                 solver.step(&system, current_dt);
                 t += current_dt;
-                points.push(SimulationPoint { t, x: solver.x.clone() });
+                points.push(SimulationPoint { t, x: solver.x.clone(), y: solver.get_outputs().to_vec() });
             }
         }
         SolverType::RK4 => {
             while t < req.params.t_final {
                 solver.step_rk4(&system, current_dt);
                 t += current_dt;
-                points.push(SimulationPoint { t, x: solver.x.clone() });
+                points.push(SimulationPoint { t, x: solver.x.clone(), y: solver.get_outputs().to_vec() });
             }
         }
         SolverType::RK45 => {
             while t < req.params.t_final {
                 current_dt = solver.step_rk45(&system, current_dt, req.params.atol, req.params.rtol);
                 t = solver.t;
-                points.push(SimulationPoint { t, x: solver.x.clone() });
+                points.push(SimulationPoint { t, x: solver.x.clone(), y: solver.get_outputs().to_vec() });
             }
         }
     }
 
-    Json(SimulationResponse { points })
+    Json(SimulationResponse { points, y_offsets })
 }
 
 #[tokio::main]
 async fn main() {
     let app = Router::new()
         .route("/simulate", post(simulate))
-        .layer(CorsLayer::permissive()); // Enable CORS for the frontend
+        .route("/results/:filename", get(get_result))
+        .layer(CorsLayer::permissive());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
     println!("Server running on http://{}", addr);
