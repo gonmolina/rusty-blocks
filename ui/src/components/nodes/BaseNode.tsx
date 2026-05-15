@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import type { ReactNode } from 'react';
-import { Handle, Position, useUpdateNodeInternals } from 'reactflow';
+import { Handle, Position, useUpdateNodeInternals, useStore } from 'reactflow';
+import type { ReactFlowState } from 'reactflow';
 
 interface BaseNodeProps {
   id?: string;
@@ -54,6 +55,8 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
   children 
 }) => {
   const updateNodeInternals = useUpdateNodeInternals();
+  // Obtener las conexiones actuales para limitar las entradas
+  const edges = useStore((s: ReactFlowState) => s.edges);
 
   useEffect(() => {
     if (id) {
@@ -92,31 +95,37 @@ export const BaseNode: React.FC<BaseNodeProps> = ({
       </div>
 
       {/* Logic Handles - These stay outside the rotation but change their 'Position' prop */}
-      {/* This ensures React Flow can calculate edge paths correctly */}
-      
       <div key={`in-group-${rotation}-${inputs}`}>
-        {Array.from({ length: inputs }).map((_, i) => (
-          <Handle
-            key={`in-${i}`}
-            type="target"
-            position={inputPos}
-            id={`in-${i}`}
-            className="!w-6 !h-6 !bg-slate-900 border-2 border-slate-400 flex items-center justify-center shadow-md hover:!bg-blue-600 transition-all"
-            style={{ 
-              zIndex: 20,
-              // Ajustamos el offset dependiendo de si es horizontal o vertical
-              [inputPos === Position.Left || inputPos === Position.Right ? 'top' : 'left']: 
-                inputs > 1 ? `${((i + 1) * 100) / (inputs + 1)}%` : '50%',
-              [inputPos]: '-12px',
-              borderRadius: '4px',
-              transform: (inputPos === Position.Left || inputPos === Position.Right) ? 'translateY(-50%)' : 'translateX(-50%)'
-            }}
-          >
-            <div style={{ transform: `rotate(${-rotation}deg)` }}>
-               <PortArrow />
-            </div>
-          </Handle>
-        ))}
+        {Array.from({ length: inputs }).map((_, i) => {
+          const handleId = `in-${i}`;
+          // LIMIT: Solo permitir una conexión por puerto de entrada
+          const isConnected = edges.some(e => e.target === id && e.targetHandle === handleId);
+          
+          return (
+            <Handle
+              key={handleId}
+              type="target"
+              position={inputPos}
+              id={handleId}
+              isConnectable={!isConnected}
+              className={`!w-6 !h-6 border-2 flex items-center justify-center shadow-md transition-all
+                ${isConnected ? '!bg-slate-400 border-slate-500 opacity-50 cursor-not-allowed' : '!bg-slate-900 border-slate-400 hover:!bg-blue-600'}
+              `}
+              style={{ 
+                zIndex: 20,
+                [inputPos === Position.Left || inputPos === Position.Right ? 'top' : 'left']: 
+                  inputs > 1 ? `${((i + 1) * 100) / (inputs + 1)}%` : '50%',
+                [inputPos]: '-12px',
+                borderRadius: '4px',
+                transform: (inputPos === Position.Left || inputPos === Position.Right) ? 'translateY(-50%)' : 'translateX(-50%)'
+              }}
+            >
+              <div style={{ transform: `rotate(${-rotation}deg)` }}>
+                 <PortArrow />
+              </div>
+            </Handle>
+          );
+        })}
       </div>
 
       <div key={`out-group-${rotation}-${outputs}`}>
