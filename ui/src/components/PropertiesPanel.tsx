@@ -1,12 +1,18 @@
 import React from 'react';
 import type { Node } from 'reactflow';
+import { RotateCw } from 'lucide-react';
 
 interface PropertiesPanelProps {
   selectedNode: Node | null;
   onUpdateParams: (nodeId: string, newParams: any) => void;
+  onUpdateRotation: (nodeId: string, rotation: number) => void;
 }
 
-export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedNode, onUpdateParams }) => {
+export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ 
+  selectedNode, 
+  onUpdateParams,
+  onUpdateRotation 
+}) => {
   if (!selectedNode) {
     return (
       <div className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm p-6 rounded-xl shadow-2xl border border-slate-200 w-80 h-[calc(100vh-2rem)] flex flex-col justify-center items-center text-slate-400 italic">
@@ -17,9 +23,15 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedNode, 
 
   const { type, data, id } = selectedNode;
   const params = data.params || {};
+  const rotation = data.rotation || 0;
 
   const handleInputChange = (key: string, value: any) => {
     onUpdateParams(id, { ...params, [key]: value });
+  };
+
+  const handleRotate = () => {
+    const nextRotation = (rotation + 90) % 360;
+    onUpdateRotation(id, nextRotation);
   };
 
   const renderFields = () => {
@@ -65,7 +77,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedNode, 
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="[0.0, 0.0]"
               />
-              <p className="text-[10px] text-slate-400 mt-1">Formato: [val1, val2, ...]</p>
             </div>
           </div>
         );
@@ -101,7 +112,6 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedNode, 
                 onChange={(e) => handleInputChange('signs', e.target.value)}
                 className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-[10px] text-slate-400 mt-1">Ejemplo: "+-+" crea 3 entradas.</p>
             </div>
           </div>
         );
@@ -114,7 +124,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedNode, 
   return (
     <div className="absolute top-4 right-4 z-10 bg-white/90 backdrop-blur-sm p-6 rounded-xl shadow-2xl border border-slate-200 w-80 h-[calc(100vh-2rem)] flex flex-col overflow-y-auto">
       <div className="flex items-center gap-2 mb-6">
-        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
+        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold uppercase">
           {type?.[0]}
         </div>
         <div>
@@ -124,11 +134,19 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({ selectedNode, 
       </div>
 
       <div className="flex-1">
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Parámetros</h3>
         {renderFields()}
       </div>
 
-      <div className="mt-6 pt-6 border-t border-slate-100 italic text-[10px] text-slate-400 text-center">
-        Los cambios se aplican instantáneamente al modelo.
+      <div className="mt-6 pt-6 border-t border-slate-100">
+        <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Orientación</h3>
+        <button 
+          onClick={handleRotate}
+          className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 text-white rounded-lg font-bold text-xs hover:bg-slate-800 transition-all shadow-md active:scale-95 uppercase tracking-widest"
+        >
+          <RotateCw size={16} /> Rotar 90°
+        </button>
+        <p className="text-[9px] text-slate-400 mt-2 text-center">Ángulo actual: {rotation}°</p>
       </div>
     </div>
   );

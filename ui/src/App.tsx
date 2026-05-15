@@ -17,25 +17,36 @@ import type {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
-import { IntegratorNode, GainNode, ConstantNode, SumNode } from './components/nodes/BlockNodes';
+import { 
+  IntegratorNode, 
+  GainNode, 
+  ConstantNode, 
+  SumNode, 
+  StepNode, 
+  MuxNode, 
+  DemuxNode, 
+  PortNode, 
+  FileSinkNode, 
+  SubsystemNode 
+} from './components/nodes/BlockNodes';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { Sidebar } from './components/Sidebar';
 import { ResultsChart } from './components/ResultsChart';
 import { SimulationSettings, type SimulationParams } from './components/SimulationSettings';
-import { exportProject, downloadJson, type ProjectFile } from './utils/persistence';
+import { exportProject, downloadJson } from './utils/persistence';
 
 const initialNodes: Node[] = [
   { 
     id: 'c1', 
     type: 'Constant',
     position: { x: 50, y: 150 }, 
-    data: { params: { value: [1.0] } }
+    data: { params: { value: [1.0] }, rotation: 0 }
   },
   { 
     id: 'int1', 
     type: 'Integrator',
     position: { x: 300, y: 150 }, 
-    data: { params: { ic: [0.0] } }
+    data: { params: { ic: [0.0] }, rotation: 0 }
   }
 ];
 
@@ -54,7 +65,6 @@ const FlowEditor = () => {
   const [results, setResults] = useState<any[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
   
-  // Simulation Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [simParams, setSimParams] = useState<SimulationParams>({
     dt: 0.1,
@@ -71,6 +81,13 @@ const FlowEditor = () => {
     Integrator: IntegratorNode,
     Gain: GainNode,
     Sum: SumNode,
+    Step: StepNode,
+    Mux: MuxNode,
+    Demux: DemuxNode,
+    InPort: PortNode,
+    OutPort: PortNode,
+    FileSink: FileSinkNode,
+    Subsystem: SubsystemNode,
   }), []);
 
   const onConnect = useCallback(
@@ -93,7 +110,7 @@ const FlowEditor = () => {
         id: getId(),
         type,
         position,
-        data: { params: getDefaultParams(type) },
+        data: { params: getDefaultParams(type), rotation: 0 },
       };
       setNodes((nds) => nds.concat(newNode));
     },
@@ -109,7 +126,7 @@ const FlowEditor = () => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const project: ProjectFile = JSON.parse(e.target?.result as string);
+        const project = JSON.parse(e.target?.result as string);
         if (project.ui) {
           setNodes(project.ui.nodes || []);
           setEdges(project.ui.edges || []);
@@ -124,14 +141,12 @@ const FlowEditor = () => {
   const handleSimulate = async () => {
     setIsSimulating(true);
     const system = exportProject("Simulación Web", nodes, edges).system;
-
     try {
       const response = await fetch('http://localhost:3000/simulate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ system, params: simParams }),
       });
-      
       const data = await response.json();
       setResults(data.points);
     } catch (err) {
@@ -146,6 +161,17 @@ const FlowEditor = () => {
       nds.map((node) => {
         if (node.id === nodeId) {
           return { ...node, data: { ...node.data, params: newParams } };
+        }
+        return node;
+      })
+    );
+  }, [setNodes]);
+
+  const updateNodeRotation = useCallback((nodeId: string, rotation: number) => {
+    setNodes((nds) =>
+      nds.map((node) => {
+        if (node.id === nodeId) {
+          return { ...node, data: { ...node.data, rotation } };
         }
         return node;
       })
@@ -207,17 +233,18 @@ const FlowEditor = () => {
       />
 
       {isSimulating && (
-        <div className="absolute inset-0 z-[100] bg-slate-900/20 backdrop-blur-[2px] flex items-center justify-center font-sans">
-          <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4 border border-slate-200">
-            <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <span className="text-sm font-bold text-slate-700 uppercase tracking-widest">Ejecutando Simulación...</span>
+        <div className="absolute inset-0 z-[100] bg-slate-900/20 backdrop-blur-[2px] flex items-center justify-center font-sans text-center">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4 border border-slate-200">
+            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <span className="text-sm font-black text-slate-800 uppercase tracking-widest">Ejecutando Simulación...</span>
           </div>
         </div>
       )}
 
       <PropertiesPanel 
         selectedNode={nodes.find(n => n.id === selectedNode?.id) || null} 
-        onUpdateParams={updateNodeParams} 
+        onUpdateParams={updateNodeParams}
+        onUpdateRotation={updateNodeRotation}
       />
     </div>
   );
