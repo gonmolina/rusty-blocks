@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useRef } from 'react';
+import { useCallback, useMemo, useState, useRef, useEffect } from 'react';
 import ReactFlow, { 
   addEdge, 
   Background, 
@@ -25,7 +25,8 @@ import {
   StepNode, 
   MuxNode, 
   DemuxNode, 
-  PortNode, 
+  InPortNode, 
+  OutPortNode, 
   FileSinkNode, 
   SubsystemNode 
 } from './components/nodes/BlockNodes';
@@ -33,48 +34,48 @@ import { PropertiesPanel } from './components/PropertiesPanel';
 import { Sidebar } from './components/Sidebar';
 import { ResultsChart } from './components/ResultsChart';
 import { SimulationSettings, type SimulationParams } from './components/SimulationSettings';
-import { exportProject, downloadJson } from './utils/persistence';
+import { exportProject, downloadJson, handleLoad, convertToSystemConfig } from './utils/persistence';
 
-const initialNodes: Node[] = [
-  { 
-    id: 'c1', 
-    type: 'Constant',
-    position: { x: 50, y: 150 }, 
-    data: { params: { value: [1.0] }, rotation: 0 }
-  },
-  { 
-    id: 'int1', 
-    type: 'Integrator',
-    position: { x: 300, y: 150 }, 
-    data: { params: { ic: [0.0] }, rotation: 0 }
-  }
-];
-
-const initialEdges: Edge[] = [
-  { id: 'e1', source: 'c1', target: 'int1', targetHandle: 'in-0' }
-];
+interface ViewLevel {
+  id: string;
+  name: string;
+  nodes: Node[];
+  edges: Edge[];
+}
 
 let id_counter = 0;
 const getId = () => `node_${Date.now()}_${id_counter++}`;
 
 const FlowEditor = () => {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  
+  const [viewStack, setViewStack] = useState<ViewLevel[]>([
+    { id: 'root', name: 'Main', nodes: [
+        { id: 'c1', type: 'Constant', position: { x: 50, y: 150 }, data: { params: { value: [1.0] }, rotation: 0 } },
+        { id: 'int1', type: 'Integrator', position: { x: 300, y: 150 }, data: { params: { ic: [0.0] }, rotation: 0 } }
+      ], 
+      edges: [{ id: 'e1', source: 'c1', target: 'int1', targetHandle: 'in-0' }] 
+    }
+  ]);
+  
+  const currentLevel = viewStack[viewStack.length - 1];
+
+  const [nodes, setNodes, onNodesChange] = useNodesState(currentLevel.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(currentLevel.edges);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [results, setResults] = useState<any[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
-  
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [simParams, setSimParams] = useState<SimulationParams>({
-    dt: 0.1,
-    t_final: 10.0,
-    solver: 'RK45',
-    atol: 1e-8,
-    rtol: 1e-4
+    dt: 0.1, t_final: 10.0, solver: 'RK45', atol: 1e-8, rtol: 1e-4
   });
   
   const { screenToFlowPosition } = useReactFlow();
+
+  useEffect(() => {
+    setNodes(currentLevel.nodes);
+    setEdges(currentLevel.edges);
+  }, [currentLevel.id, setNodes, setEdges]);
 
   const nodeTypes = useMemo(() => ({
     Constant: ConstantNode,
@@ -84,8 +85,8 @@ const FlowEditor = () => {
     Step: StepNode,
     Mux: MuxNode,
     Demux: DemuxNode,
-    InPort: PortNode,
-    OutPort: PortNode,
+    InPort: InPortNode,
+    OutPort: OutPortNode,
     FileSink: FileSinkNode,
     Subsystem: SubsystemNode,
   }), []);
@@ -95,10 +96,55 @@ const FlowEditor = () => {
     [setEdges]
   );
 
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-  }, []);
+  const onNodeDoubleClick = useCallback((_event: React.MouseEvent, node: Node) => {
+    if (node.type === 'Subsystem') {
+      setViewStack(prev => {
+        const next = [...prev];
+        next[next.length - 1] = { ...currentLevel, nodes, edges };
+        
+        const internalState = node.data.internalState || { nodes: [], edges: [] };
+        next.push({
+          id: node.id,
+          name: node.data.params?.name || 'Subsystem',
+          nodes: internalState.nodes,
+          edges: internalState.edges
+        });
+        return next;
+      });
+    }
+  }, [nodes, edges, currentLevel]);
+
+  const navigateBack = (index: number) => {
+    if (index === viewStack.length - 1) return;
+    
+    setViewStack(prev => {
+      const next = [...prev];
+      const parentLevelIndex = index;
+      
+      // Save current level state into the node in the viewStack before popping
+      const currentSubsystemId = viewStack[viewStack.length - 1].id;
+      
+      next[index].nodes = next[index].nodes.map(n => {
+        if (n.id === currentSubsystemId) {
+          return { 
+            ...n, 
+            data: { 
+              ...n.data, 
+              internalState: { nodes, edges },
+              params: {
+                ...n.data.params,
+                _numInputs: nodes.filter(node => node.type === 'InPort').length,
+                _numOutputs: nodes.filter(node => node.type === 'OutPort').length
+              }
+            } 
+          };
+        }
+        return n;
+      });
+      
+      return next.slice(0, index + 1);
+    });
+  };
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
@@ -117,30 +163,27 @@ const FlowEditor = () => {
     [screenToFlowPosition, setNodes]
   );
 
-  const handleSave = useCallback(() => {
-    const project = exportProject("Mi Simulación", nodes, edges);
-    downloadJson(project, "modelo_bloques.json");
-  }, [nodes, edges]);
-
-  const handleLoad = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const project = JSON.parse(e.target?.result as string);
-        if (project.ui) {
-          setNodes(project.ui.nodes || []);
-          setEdges(project.ui.edges || []);
-        }
-      } catch (err) {
-        alert("Error al cargar el archivo JSON");
-      }
-    };
-    reader.readAsText(file);
-  }, [setNodes, setEdges]);
-
   const handleSimulate = async () => {
     setIsSimulating(true);
-    const system = exportProject("Simulación Web", nodes, edges).system;
+    
+    // Al simular, siempre usamos la raíz (Main) y construimos recursivamente
+    // pero primero guardamos el nivel actual en el stack para no perder cambios.
+    let rootLevelNodes = viewStack[0].nodes;
+    let rootLevelEdges = viewStack[0].edges;
+    
+    if (viewStack.length > 1) {
+        // Si estamos dentro de un subsistema, actualizamos la referencia en la raíz antes de simular
+        const currentSubId = viewStack[viewStack.length - 1].id;
+        rootLevelNodes = rootLevelNodes.map(n => {
+            if (n.id === currentSubId) {
+                return { ...n, data: { ...n.data, internalState: { nodes, edges } } };
+            }
+            return n;
+        });
+    }
+
+    const system = convertToSystemConfig("Full System", rootLevelNodes, rootLevelEdges);
+
     try {
       const response = await fetch('http://localhost:3000/simulate', {
         method: 'POST',
@@ -156,44 +199,32 @@ const FlowEditor = () => {
     }
   };
 
-  const updateNodeParams = useCallback((nodeId: string, newParams: any) => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === nodeId) {
-          return { ...node, data: { ...node.data, params: newParams } };
-        }
-        return node;
-      })
-    );
-  }, [setNodes]);
-
-  const updateNodeRotation = useCallback((nodeId: string, rotation: number) => {
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === nodeId) {
-          return { ...node, data: { ...node.data, rotation } };
-        }
-        return node;
-      })
-    );
-  }, [setNodes]);
-
-  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
-    setSelectedNode(params.nodes[0] || null);
-  }, []);
-
   return (
-    <div className="flex w-full h-full relative overflow-hidden bg-slate-100" ref={reactFlowWrapper}>
+    <div className="flex w-full h-full relative overflow-hidden bg-slate-100 font-sans" ref={reactFlowWrapper}>
       <Sidebar 
-        onSave={handleSave} 
-        onLoad={handleLoad} 
+        onSave={() => downloadJson(exportProject("Project", nodes, edges), "project.json")} 
+        onLoad={(file) => handleLoad(file, setNodes, setEdges)} 
         onSimulate={handleSimulate} 
         onOpenSettings={() => setIsSettingsOpen(true)}
         solverType={simParams.solver}
       />
       
       <div className="flex-1 h-full flex flex-col">
-        <div className={results.length > 0 ? "h-2/3 border-b border-slate-200" : "h-full"}>
+        <div className="bg-white/80 backdrop-blur-md px-6 py-3 border-b border-slate-200 flex items-center gap-2 z-20">
+          {viewStack.map((level, i) => (
+            <div key={level.id} className="flex items-center gap-2">
+              {i > 0 && <span className="text-slate-300 font-bold">/</span>}
+              <button 
+                onClick={() => navigateBack(i)}
+                className={`text-xs font-black uppercase tracking-widest hover:text-blue-600 transition-colors ${i === viewStack.length - 1 ? 'text-slate-800' : 'text-slate-400'}`}
+              >
+                {level.name}
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className={results.length > 0 ? "h-2/3 border-b border-slate-200" : "flex-1"}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -202,8 +233,9 @@ const FlowEditor = () => {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onDrop={onDrop}
-            onDragOver={onDragOver}
-            onSelectionChange={onSelectionChange}
+            onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+            onSelectionChange={(p) => setSelectedNode(p.nodes[0] || null)}
+            onNodeDoubleClick={onNodeDoubleClick}
             fitView
           >
             <Background />
@@ -213,38 +245,28 @@ const FlowEditor = () => {
         </div>
 
         {results.length > 0 && (
-          <div className="h-1/3 bg-slate-50 p-4 relative">
-             <button 
-              onClick={() => setResults([])}
-              className="absolute top-6 right-6 z-20 text-xs font-bold text-slate-400 hover:text-slate-600 uppercase"
-            >
-              Cerrar Gráfico
-            </button>
+          <div className="h-1/3 bg-slate-50 p-4 relative overflow-hidden">
+             <button onClick={() => setResults([])} className="absolute top-6 right-6 z-20 text-xs font-bold text-slate-400 hover:text-slate-600 uppercase">Cerrar</button>
             <ResultsChart data={results} />
           </div>
         )}
       </div>
 
-      <SimulationSettings 
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        params={simParams}
-        onUpdate={setSimParams}
-      />
+      <SimulationSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} params={simParams} onUpdate={setSimParams} />
 
       {isSimulating && (
-        <div className="absolute inset-0 z-[100] bg-slate-900/20 backdrop-blur-[2px] flex items-center justify-center font-sans text-center">
+        <div className="absolute inset-0 z-[100] bg-slate-900/20 backdrop-blur-[2px] flex items-center justify-center">
           <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4 border border-slate-200">
             <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <span className="text-sm font-black text-slate-800 uppercase tracking-widest">Ejecutando Simulación...</span>
+            <span className="text-sm font-black text-slate-800 uppercase tracking-widest text-center">Ejecutando Simulación...</span>
           </div>
         </div>
       )}
 
       <PropertiesPanel 
         selectedNode={nodes.find(n => n.id === selectedNode?.id) || null} 
-        onUpdateParams={updateNodeParams}
-        onUpdateRotation={updateNodeRotation}
+        onUpdateParams={(id, p) => setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, params: p } } : n))}
+        onUpdateRotation={(id, r) => setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, rotation: r } } : n))}
       />
     </div>
   );

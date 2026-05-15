@@ -2,25 +2,42 @@ import type { Node, Edge } from 'reactflow';
 
 export interface ProjectFile {
   version: string;
-  system: {
-    name: string;
-    blocks: any[];
-    connections: any[];
-  };
+  system: SystemConfig;
   ui: {
     nodes: Node[];
     edges: Edge[];
   };
 }
 
-export const exportProject = (name: string, nodes: Node[], edges: Edge[]): ProjectFile => {
-  const blocks = nodes.map(node => ({
-    id: node.id,
-    type: node.type,
-    params: node.data.params,
-    // Guardamos la posición aquí también por si el motor quiere usarla
-    ui_meta: { position: node.position } 
-  }));
+interface SystemConfig {
+  name: string;
+  blocks: any[];
+  connections: any[];
+}
+
+export const convertToSystemConfig = (name: string, nodes: Node[], edges: Edge[]): SystemConfig => {
+  const blocks = nodes.map(node => {
+    let params = { ...node.data.params };
+
+    // Si es un subsistema, construimos su configuración interna recursivamente
+    if (node.type === 'Subsystem' && node.data.internalState) {
+      const internal = node.data.internalState;
+      const subConfig = convertToSystemConfig(
+        params.name || "Subsystem",
+        internal.nodes || [],
+        internal.edges || []
+      );
+      // El motor espera que los parámetros de un Subsystem sean el SystemConfig mismo
+      params = { ...subConfig };
+    }
+
+    return {
+      id: node.id,
+      type: node.type,
+      params: params,
+      ui_meta: { position: node.position, rotation: node.data.rotation }
+    };
+  });
 
   const connections = edges.map(edge => ({
     from: edge.source,
@@ -30,12 +47,16 @@ export const exportProject = (name: string, nodes: Node[], edges: Edge[]): Proje
   }));
 
   return {
+    name,
+    blocks,
+    connections
+  };
+};
+
+export const exportProject = (name: string, nodes: Node[], edges: Edge[]): ProjectFile => {
+  return {
     version: "2.0",
-    system: {
-      name,
-      blocks,
-      connections
-    },
+    system: convertToSystemConfig(name, nodes, edges),
     ui: {
       nodes,
       edges
@@ -52,4 +73,20 @@ export const downloadJson = (data: object, filename: string) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+export const handleLoad = (file: File, setNodes: any, setEdges: any) => {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const project: ProjectFile = JSON.parse(e.target?.result as string);
+      if (project.ui) {
+        setNodes(project.ui.nodes || []);
+        setEdges(project.ui.edges || []);
+      }
+    } catch (err) {
+      alert("Error al cargar el archivo JSON");
+    }
+  };
+  reader.readAsText(file);
 };
