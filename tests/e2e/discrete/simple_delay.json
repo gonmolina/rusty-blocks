@@ -1,0 +1,19 @@
+{
+  "description": "UnitDelay with step input: step rises at t=1, delay propagates after Ts=0.5",
+  "system": {
+    "name": "DiscreteDelay",
+    "blocks": [
+      {"id": "step1", "type": "Step", "params": {"initial_value": 0, "final_value": 1, "step_time": 1}},
+      {"id": "ud1", "type": "UnitDelay", "params": {"ts": 0.5, "width": 1}}
+    ],
+    "connections": [
+      {"from": "step1", "from_port": 0, "to": "ud1", "to_port": 0}
+    ]
+  },
+  "params": {"dt": 0.1, "t_final": 5, "solver": "Discrete"},
+  "expect": {
+    "min_points": 5,
+    "final_t": 5,
+    "check_t_1_5": {"block": "ud1", "output": 0, "value": 1}
+  }
+}

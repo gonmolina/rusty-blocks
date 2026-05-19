@@ -1,0 +1,22 @@
+{
+  "description": "Hybrid: step at t=0 into integrator, output sampled by UnitDelay at Ts=0.5",
+  "system": {
+    "name": "HybridIntDelay",
+    "blocks": [
+      {"id": "step1", "type": "Step", "params": {"initial_value": 0, "final_value": 1, "step_time": 0}},
+      {"id": "int1", "type": "Integrator", "params": {"ic": [0]}},
+      {"id": "ud1", "type": "UnitDelay", "params": {"ts": 0.5, "width": 1}}
+    ],
+    "connections": [
+      {"from": "step1", "from_port": 0, "to": "int1", "to_port": 0},
+      {"from": "int1", "from_port": 0, "to": "ud1", "to_port": 0}
+    ]
+  },
+  "params": {"dt": 0.01, "t_final": 1, "solver": "Hybrid"},
+  "expect": {
+    "min_points": 50,
+    "final_t": 1,
+    "check_t_0_5_int_approx_0_5": true,
+    "check_t_1_int_approx_1": true
+  }
+}

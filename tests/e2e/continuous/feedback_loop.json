@@ -1,0 +1,20 @@
+{
+  "description": "Continuous feedback loop: Integrator with Gain=-5. Should decay from 10.0 to near 0.",
+  "system": {
+    "name": "FeedbackLoop",
+    "blocks": [
+      {"id": "g1", "type": "Gain", "params": {"k": -5.0, "width": 1}},
+      {"id": "i1", "type": "Integrator", "params": {"ic": [10.0]}}
+    ],
+    "connections": [
+      {"from": "i1", "from_port": 0, "to": "g1", "to_port": 0},
+      {"from": "g1", "from_port": 0, "to": "i1", "to_port": 0}
+    ]
+  },
+  "params": {"dt": 0.001, "t_final": 1, "solver": "Euler"},
+  "expect": {
+    "min_points": 100,
+    "final_t": 1,
+    "final_state_lt": 0.1
+  }
+}
