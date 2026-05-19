@@ -4,11 +4,13 @@ pub mod system;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq)]
 pub enum SolverType {
     Euler,
     RK4,
     RK45,
+    Hybrid,
+    Discrete,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

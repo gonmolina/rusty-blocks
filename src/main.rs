@@ -44,7 +44,25 @@ fn main() {
     );
 
     let system = System::from_config(system_config, &registry);
-    let mut solver = EulerSolver::new(&system).expect("Error al inicializar el solver");
+
+    // Validate: Discrete solver requires no continuous-state blocks
+    if sim_params.solver == SolverType::Discrete {
+        let has_continuous = system.blocks.iter().any(|b| {
+            b.num_states() > 0 && b.sample_time().is_none()
+        });
+        if has_continuous {
+            eprintln!("Error: El solver 'Discrete' solo puede usarse con sistemas puramente discretos.");
+            eprintln!("       El sistema contiene bloques con estados continuos (ej. Integrator).");
+            eprintln!("       Usá el solver 'Hybrid' para sistemas mixtos.");
+            std::process::exit(1);
+        }
+    }
+
+    let mut solver = match sim_params.solver {
+        SolverType::Hybrid | SolverType::Discrete => EulerSolver::new_hybrid(&system),
+        _ => EulerSolver::new(&system),
+    }
+    .expect("Error al inicializar el solver");
 
     let mut t = 0.0;
     let mut current_dt = sim_params.dt;
@@ -78,6 +96,30 @@ fn main() {
             while t < sim_params.t_final {
                 current_dt = solver.step_rk45(&system, current_dt, sim_params.atol, sim_params.rtol);
                 t = solver.t;
+                if t >= last_print_t + 1.0 || t >= sim_params.t_final {
+                    println!("{:.3}\t{:?}", t, solver.x);
+                    last_print_t = t;
+                }
+            }
+        }
+        SolverType::Hybrid => {
+            while t < sim_params.t_final {
+                let prev_t = solver.t;
+                solver.step_hybrid(&system, current_dt);
+                t = solver.t;
+                if t <= prev_t { eprintln!("Aviso: Simulación detenida (sin progreso temporal)."); break; }
+                if t >= last_print_t + 1.0 || t >= sim_params.t_final {
+                    println!("{:.3}\t{:?}", t, solver.x);
+                    last_print_t = t;
+                }
+            }
+        }
+        SolverType::Discrete => {
+            while t < sim_params.t_final {
+                let prev_t = solver.t;
+                solver.step_discrete(&system);
+                t = solver.t;
+                if t <= prev_t { eprintln!("Aviso: Simulación detenida (sin progreso temporal)."); break; }
                 if t >= last_print_t + 1.0 || t >= sim_params.t_final {
                     println!("{:.3}\t{:?}", t, solver.x);
                     last_print_t = t;

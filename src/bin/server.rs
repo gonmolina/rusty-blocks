@@ -31,6 +31,8 @@ struct SimulationResponse {
     points: Vec<SimulationPoint>,
     y_offsets: HashMap<String, usize>,
     output_widths: HashMap<String, Vec<usize>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
 }
 
 async fn get_result(Path(filename): Path<String>) -> Result<Json<Vec<HashMap<String, f64>>>, String> {
@@ -54,7 +56,27 @@ async fn simulate(Json(req): Json<SimulationRequest>) -> Json<SimulationResponse
     registry.register("Subsystem", Subsystem::build);
 
     let system = System::from_config(req.system.clone(), &registry);
-    let mut solver = EulerSolver::new(&system).expect("Error initializing solver");
+
+    // Validate: Discrete solver requires no continuous-state blocks
+    if req.params.solver == SolverType::Discrete {
+        let has_continuous = system.blocks.iter().any(|b| {
+            b.num_states() > 0 && b.sample_time().is_none()
+        });
+        if has_continuous {
+            return Json(SimulationResponse {
+                points: vec![],
+                y_offsets: HashMap::new(),
+                output_widths: HashMap::new(),
+                error: Some("El solver 'Discrete' solo puede usarse con sistemas puramente discretos (sin bloques con estados continuos como Integrator). Usá 'Hybrid' para sistemas mixtos.".into()),
+            });
+        }
+    }
+
+    let mut solver = match req.params.solver {
+        SolverType::Hybrid | SolverType::Discrete => EulerSolver::new_hybrid(&system),
+        _ => EulerSolver::new(&system),
+    }
+    .expect("Error initializing solver");
 
     // Map block string IDs to their global output offsets and output port widths
     let mut y_offsets = HashMap::new();
@@ -100,9 +122,27 @@ async fn simulate(Json(req): Json<SimulationRequest>) -> Json<SimulationResponse
                 points.push(SimulationPoint { t, x: solver.x.clone(), y: solver.get_outputs().to_vec() });
             }
         }
+        SolverType::Hybrid => {
+            while t < req.params.t_final {
+                let prev_t = solver.t;
+                solver.step_hybrid(&system, current_dt);
+                t = solver.t;
+                if t <= prev_t { break; } // safety: no progress
+                points.push(SimulationPoint { t, x: solver.x.clone(), y: solver.get_outputs().to_vec() });
+            }
+        }
+        SolverType::Discrete => {
+            while t < req.params.t_final {
+                let prev_t = solver.t;
+                solver.step_discrete(&system);
+                t = solver.t;
+                if t <= prev_t { break; } // safety: no progress
+                points.push(SimulationPoint { t, x: solver.x.clone(), y: solver.get_outputs().to_vec() });
+            }
+        }
     }
 
-    Json(SimulationResponse { points, y_offsets, output_widths })
+    Json(SimulationResponse { points, y_offsets, output_widths, error: None })
 }
 
 #[tokio::main]

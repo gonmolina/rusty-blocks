@@ -1,4 +1,5 @@
 pub mod continuous;
+pub mod discrete;
 pub mod math;
 pub mod ports;
 pub mod routing;
@@ -6,6 +7,7 @@ pub mod sinks;
 pub mod sources;
 
 pub use continuous::Integrator;
+pub use discrete::{UnitDelay, DiscreteIntegrator, ZeroOrderHold, DiscreteFilter};
 pub use math::{Gain, Sum};
 pub use ports::{InPort, OutPort};
 pub use routing::{Demux, Mux};
@@ -54,6 +56,10 @@ impl BlockRegistry {
         r.register("OutPort", ports::OutPort::build);
         r.register("FileSink", sinks::FileSink::build);
         r.register("Scope", sinks::Scope::build);
+        r.register("UnitDelay", discrete::UnitDelay::build);
+        r.register("DiscreteIntegrator", discrete::DiscreteIntegrator::build);
+        r.register("ZeroOrderHold", discrete::ZeroOrderHold::build);
+        r.register("DiscreteFilter", discrete::DiscreteFilter::build);
         r
     }
 }
@@ -78,6 +84,11 @@ pub trait Block {
     
     fn has_direct_feedthrough(&self) -> bool;
     fn get_initial_conditions(&self, x: &mut [f64]);
+
+    /// Sample time for discrete-time blocks. `None` = continuous.
+    fn sample_time(&self) -> Option<f64> { None }
+    /// State update for discrete blocks. `x[k+1] = f(t, x[k], u[k])`.
+    fn update(&self, _t: f64, _x: &[f64], _u: &[f64]) -> Vec<f64> { vec![] }
 
     fn next_event(&self, _t: f64) -> Option<f64> { None }
     fn on_step_end(&self, _t: f64, _x: &[f64], _u: &[f64]) {}

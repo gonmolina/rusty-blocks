@@ -18,6 +18,10 @@ pub struct EulerSolver {
     block_y_offsets: Vec<usize>,
     // Connections grouped by target block for O(N) execution
     block_input_conns: Vec<Vec<FlatConnection>>,
+    // Hybrid: discrete block tracking
+    discrete_sample_times: Vec<f64>,    // Ts per discrete block
+    discrete_next_hits: Vec<f64>,       // next sample instant
+    discrete_block_ids: Vec<BlockId>,   // which blocks are discrete
 }
 
 impl EulerSolver {
@@ -76,7 +80,49 @@ impl EulerSolver {
             block_u_offsets,
             block_y_offsets,
             block_input_conns,
+            discrete_sample_times: Vec::new(),
+            discrete_next_hits: Vec::new(),
+            discrete_block_ids: Vec::new(),
         })
+    }
+
+    /// Compute outputs in topological order. Side-effect: updates u_buf and y_buf.
+    /// No allocations — reuse buffers.
+    fn compute_outputs_internal(
+        execution_order: &[BlockId],
+        state_offsets: &[usize],
+        u_offsets: &[usize],
+        y_offsets: &[usize],
+        input_conns: &[Vec<FlatConnection>],
+        system: &System,
+        t: f64,
+        x: &[f64],
+        u_buf: &mut [f64],
+        y_buf: &mut [f64],
+    ) {
+        for &id in execution_order {
+            let block = &system.blocks[id];
+
+            for conn in &input_conns[id] {
+                // SAFETY: see invariants documented in Solver construction.
+                let (src_ptr, dst_ptr) = unsafe {
+                    (
+                        y_buf.as_ptr().add(conn.global_from_idx),
+                        u_buf.as_mut_ptr().add(conn.global_to_idx),
+                    )
+                };
+                unsafe { std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, conn.width); }
+            }
+
+            let n_s = block.num_states();
+            let b_states = &x[state_offsets[id] .. state_offsets[id] + n_s];
+            let u_start = u_offsets[id];
+            let b_inputs = &u_buf[u_start .. u_start + block.total_input_width()];
+            let y_start = y_offsets[id];
+            let b_outputs = &mut y_buf[y_start .. y_start + block.total_output_width()];
+
+            block.outputs(t, b_states, b_inputs, b_outputs);
+        }
     }
 
     fn compute_derivatives_internal(
@@ -91,41 +137,11 @@ impl EulerSolver {
         u_buf: &mut [f64],
         y_buf: &mut [f64],
     ) -> Vec<f64> {
-        // 1. Calculate outputs in topological order
-        for &id in execution_order {
-            let block = &system.blocks[id];
+        Self::compute_outputs_internal(
+            execution_order, state_offsets, u_offsets, y_offsets,
+            input_conns, system, t, x, u_buf, y_buf,
+        );
 
-            // Update inputs for this block from other blocks' outputs
-            for conn in &input_conns[id] {
-                // RATIONALE: Using pointers and copy_nonoverlapping (memcpy) avoids 
-                // repeated bounds checks in the inner loop and provides peak throughput.
-                //
-                // SAFETY: 
-                // 1. Offsets and widths are pre-calculated and validated during Solver construction.
-                // 2. y_buf (outputs) and u_buf (inputs) are separate allocations; they never overlap.
-                // 3. Topological order guarantees that y_buf[global_from_idx] contains valid data.
-                let (src_ptr, dst_ptr) = unsafe {
-                    (
-                        y_buf.as_ptr().add(conn.global_from_idx),
-                        u_buf.as_mut_ptr().add(conn.global_to_idx),
-                    )
-                };
-                unsafe { std::ptr::copy_nonoverlapping(src_ptr, dst_ptr, conn.width); }
-            }
-
-            let n_s = block.num_states();
-            let b_states = &x[state_offsets[id] .. state_offsets[id] + n_s];
-            
-            let u_start = u_offsets[id];
-            let b_inputs = &u_buf[u_start .. u_start + block.total_input_width()];
-            
-            let y_start = y_offsets[id];
-            let b_outputs = &mut y_buf[y_start .. y_start + block.total_output_width()];
-            
-            block.outputs(t, b_states, b_inputs, b_outputs);
-        }
-
-        // 2. Calculate derivatives
         let mut dx_global = vec![0.0; x.len()];
         for (id, block) in system.blocks.iter().enumerate() {
             let n_s = block.num_states();
@@ -134,7 +150,7 @@ impl EulerSolver {
                 let u_start = u_offsets[id];
                 let b_inputs = &u_buf[u_start .. u_start + block.total_input_width()];
                 let b_dx = &mut dx_global[state_offsets[id] .. state_offsets[id] + n_s];
-                
+
                 block.derivatives(t, b_states, b_inputs, b_dx);
             }
         }
@@ -166,7 +182,16 @@ impl EulerSolver {
 
     fn ensure_initial_step_finalized(&mut self, system: &System) {
         if self.t == 0.0 {
-            self.compute_derivatives(system, 0.0, &self.x.clone());
+            Self::compute_outputs_internal(
+                &self.execution_order,
+                &self.block_state_offsets,
+                &self.block_u_offsets,
+                &self.block_y_offsets,
+                &self.block_input_conns,
+                system, 0.0, &self.x,
+                &mut self.global_u,
+                &mut self.global_y,
+            );
             self.finalize_step(system);
         }
     }
@@ -174,8 +199,16 @@ impl EulerSolver {
     pub fn step(&mut self, system: &System, suggested_dt: f64) {
         self.ensure_initial_step_finalized(system);
         let dt = self.get_dt_limit(system, suggested_dt);
-        let x_curr = self.x.clone();
-        let dx = self.compute_derivatives(system, self.t, &x_curr);
+        let dx = Self::compute_derivatives_internal(
+            &self.execution_order,
+            &self.block_state_offsets,
+            &self.block_u_offsets,
+            &self.block_y_offsets,
+            &self.block_input_conns,
+            system, self.t, &self.x,
+            &mut self.global_u,
+            &mut self.global_y,
+        );
         for i in 0..self.x.len() { self.x[i] += dt * dx[i]; }
         self.t += dt;
         self.finalize_step(system);
@@ -271,6 +304,168 @@ impl EulerSolver {
 
     pub fn get_y_offset(&self, block_idx: usize) -> usize {
         self.block_y_offsets[block_idx]
+    }
+
+    // ── Hybrid simulation ──────────────────────────────────────────────
+
+    /// Build solver with discrete-block awareness.
+    pub fn new_hybrid(system: &System) -> Result<Self, String> {
+        let mut s = Self::new(system)?;
+
+        for (i, block) in system.blocks.iter().enumerate() {
+            if let Some(ts) = block.sample_time() {
+                s.discrete_block_ids.push(i);
+                s.discrete_sample_times.push(ts);
+                s.discrete_next_hits.push(ts); // first hit at t=Ts (initial state is at t=0)
+            }
+        }
+
+        s.execution_order = system.calculate_execution_order()?;
+        Ok(s)
+    }
+
+    /// One hybrid step: integrate continuous states up to the next
+    /// discrete hit (or `suggested_dt`), then fire discrete updates.
+    pub fn step_hybrid(&mut self, system: &System, suggested_dt: f64) {
+        self.ensure_initial_step_finalized(system);
+
+        // Find next discrete hit among tracked blocks
+        let t_horizon = self.t + suggested_dt;
+        let eps = 1e-12;
+        let mut t_target = t_horizon;
+
+        for idx in 0..self.discrete_block_ids.len() {
+            let next_hit = self.discrete_next_hits[idx];
+            if next_hit <= t_horizon + eps && next_hit < t_target + eps {
+                t_target = next_hit;
+            }
+        }
+
+        // Integrate continuous states to t_target
+        self.integrate_continuous_to(system, t_target);
+
+        // Fire discrete updates whose next_hit ≈ self.t
+        let mut any_fired = false;
+        for idx in 0..self.discrete_block_ids.len() {
+            if (self.discrete_next_hits[idx] - self.t).abs() < eps {
+                let id = self.discrete_block_ids[idx];
+                let block = &system.blocks[id];
+                let n_s = block.num_states();
+                if n_s > 0 {
+                    let x_start = self.block_state_offsets[id];
+                    let u_start = self.block_u_offsets[id];
+                    let b_inputs = &self.global_u[u_start..u_start + block.total_input_width()];
+                    let x_new = block.update(self.t, &self.x[x_start..x_start + n_s], b_inputs);
+                    self.x[x_start..x_start + n_s].copy_from_slice(&x_new);
+                    any_fired = true;
+                }
+                // Advance next_hit: use (n+1)*Ts to avoid drift
+                let ts = self.discrete_sample_times[idx];
+                let n = ((self.discrete_next_hits[idx] / ts) + 0.5) as u64;
+                self.discrete_next_hits[idx] = (n + 1) as f64 * ts;
+            }
+        }
+
+        if any_fired {
+            // Recompute outputs so continuous blocks see updated discrete outputs
+            Self::compute_outputs_internal(
+                &self.execution_order,
+                &self.block_state_offsets,
+                &self.block_u_offsets,
+                &self.block_y_offsets,
+                &self.block_input_conns,
+                system, self.t, &self.x,
+                &mut self.global_u,
+                &mut self.global_y,
+            );
+        }
+
+        self.finalize_step(system);
+    }
+
+    /// Discrete-only step: skip continuous integration, just advance to
+    /// the next sample hit, fire updates, and recompute outputs.
+    pub fn step_discrete(&mut self, system: &System) {
+        self.ensure_initial_step_finalized(system);
+
+        if self.discrete_block_ids.is_empty() {
+            return; // nothing to do
+        }
+
+        // Find the earliest pending discrete hit
+        let mut t_next = f64::INFINITY;
+        for idx in 0..self.discrete_block_ids.len() {
+            let hit = self.discrete_next_hits[idx];
+            if hit > self.t + 1e-12 && hit < t_next {
+                t_next = hit;
+            }
+        }
+
+        if t_next.is_infinite() {
+            return; // no more hits scheduled
+        }
+
+        // Jump directly to the hit instant
+        self.t = t_next;
+
+        // Fire all discrete blocks whose next_hit matches this instant
+        let eps = 1e-12;
+        let mut any_fired = false;
+        for idx in 0..self.discrete_block_ids.len() {
+            if (self.discrete_next_hits[idx] - self.t).abs() < eps {
+                let id = self.discrete_block_ids[idx];
+                let block = &system.blocks[id];
+                let n_s = block.num_states();
+                if n_s > 0 {
+                    let x_start = self.block_state_offsets[id];
+                    let u_start = self.block_u_offsets[id];
+                    let b_inputs = &self.global_u[u_start..u_start + block.total_input_width()];
+                    let x_new = block.update(self.t, &self.x[x_start..x_start + n_s], b_inputs);
+                    self.x[x_start..x_start + n_s].copy_from_slice(&x_new);
+                    any_fired = true;
+                }
+                let ts = self.discrete_sample_times[idx];
+                let n = ((self.discrete_next_hits[idx] / ts) + 0.5) as u64;
+                self.discrete_next_hits[idx] = (n + 1) as f64 * ts;
+            }
+        }
+
+        if any_fired {
+            Self::compute_outputs_internal(
+                &self.execution_order,
+                &self.block_state_offsets,
+                &self.block_u_offsets,
+                &self.block_y_offsets,
+                &self.block_input_conns,
+                system, self.t, &self.x,
+                &mut self.global_u,
+                &mut self.global_y,
+            );
+        }
+
+        self.finalize_step(system);
+    }
+
+    /// Sub-step continuous blocks from `self.t` to `t_target`.
+    fn integrate_continuous_to(&mut self, system: &System, t_target: f64) {
+        if t_target <= self.t + 1e-12 { return; }
+
+        let dt = t_target - self.t;
+        let dx = Self::compute_derivatives_internal(
+            &self.execution_order,
+            &self.block_state_offsets,
+            &self.block_u_offsets,
+            &self.block_y_offsets,
+            &self.block_input_conns,
+            system, self.t, &self.x,
+            &mut self.global_u,
+            &mut self.global_y,
+        );
+
+        for i in 0..self.x.len() {
+            self.x[i] += dt * dx[i];
+        }
+        self.t = t_target;
     }
 }
 
