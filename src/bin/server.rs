@@ -30,6 +30,7 @@ struct SimulationPoint {
 struct SimulationResponse {
     points: Vec<SimulationPoint>,
     y_offsets: HashMap<String, usize>,
+    output_widths: HashMap<String, Vec<usize>>,
 }
 
 async fn get_result(Path(filename): Path<String>) -> Result<Json<Vec<HashMap<String, f64>>>, String> {
@@ -55,10 +56,15 @@ async fn simulate(Json(req): Json<SimulationRequest>) -> Json<SimulationResponse
     let system = System::from_config(req.system.clone(), &registry);
     let mut solver = EulerSolver::new(&system).expect("Error initializing solver");
 
-    // Map block string IDs to their global output offsets
+    // Map block string IDs to their global output offsets and output port widths
     let mut y_offsets = HashMap::new();
+    let mut output_widths = HashMap::new();
     for (i, b_config) in req.system.blocks.iter().enumerate() {
         y_offsets.insert(b_config.id.clone(), solver.get_y_offset(i));
+        let widths: Vec<usize> = (0..system.blocks[i].num_outputs())
+            .map(|p| system.blocks[i].output_width(p))
+            .collect();
+        output_widths.insert(b_config.id.clone(), widths);
     }
 
     let mut points = Vec::new();
@@ -96,7 +102,7 @@ async fn simulate(Json(req): Json<SimulationRequest>) -> Json<SimulationResponse
         }
     }
 
-    Json(SimulationResponse { points, y_offsets })
+    Json(SimulationResponse { points, y_offsets, output_widths })
 }
 
 #[tokio::main]

@@ -94,29 +94,34 @@ impl Block for FileSink {
     fn get_initial_conditions(&self, _x: &mut [f64]) {}
 }
 
-/// A visual scope block (no-op in engine).
+/// A visual scope block (no-op in engine). Supports up to 4 input ports.
 pub struct Scope {
-    width: usize,
+    input_widths: Vec<usize>,
 }
 
 impl Scope {
-    pub fn new(width: usize) -> Self {
-        Self { width }
+    pub fn new(input_widths: Vec<usize>) -> Self {
+        assert!(!input_widths.is_empty() && input_widths.len() <= 4, "Scope requires 1-4 inputs");
+        Self { input_widths }
     }
 
     pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
         #[derive(Deserialize)]
-        struct Params { width: usize }
-        let p: Params = serde_json::from_value(v).unwrap_or(Params { width: 1 });
-        Ok(Box::new(Self::new(p.width)))
+        struct Params {
+            #[serde(default = "default_input_widths")]
+            input_widths: Vec<usize>,
+        }
+        fn default_input_widths() -> Vec<usize> { vec![1] }
+        let p: Params = serde_json::from_value(v).unwrap_or(Params { input_widths: vec![1] });
+        Ok(Box::new(Self::new(p.input_widths)))
     }
 }
 
 impl Block for Scope {
     fn num_states(&self) -> usize { 0 }
-    fn num_inputs(&self) -> usize { 1 }
+    fn num_inputs(&self) -> usize { self.input_widths.len() }
     fn num_outputs(&self) -> usize { 0 }
-    fn input_width(&self, _port: usize) -> usize { self.width }
+    fn input_width(&self, port: usize) -> usize { self.input_widths[port] }
     fn output_width(&self, _port: usize) -> usize { 0 }
     fn derivatives(&self, _t: f64, _x: &[f64], _u: &[f64], _dx: &mut [f64]) {}
     fn outputs(&self, _t: f64, _x: &[f64], _u: &[f64], _y: &mut [f64]) {}
