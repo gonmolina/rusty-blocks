@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Activity, Gauge, Hash, PlusCircle, Laptop, ArrowRightLeft, StepForward, Disc, LogIn, LogOut, Save, FolderOpen, Settings2, Play, Monitor } from 'lucide-react';
+import { Activity, Gauge, Hash, PlusCircle, Laptop, ArrowRightLeft, StepForward, Disc, LogIn, LogOut, Save, FolderOpen, Settings2, Play, Monitor, Clock, Pause, Server } from 'lucide-react';
 
 const blocks = [
   { type: 'Constant', label: 'Constant', icon: <Hash size={16} />, category: 'Sources' },
@@ -7,6 +7,10 @@ const blocks = [
   { type: 'Gain', label: 'Gain', icon: <Gauge size={16} />, category: 'Math' },
   { type: 'Sum', label: 'Sum', icon: <PlusCircle size={16} />, category: 'Math' },
   { type: 'Integrator', label: 'Integrator', icon: <Activity size={16} />, category: 'Continuous' },
+  { type: 'UnitDelay', label: 'UnitDelay', icon: <Clock size={16} />, category: 'Discrete' },
+  { type: 'DiscreteIntegrator', label: 'D-Integrator', icon: <Activity size={16} />, category: 'Discrete' },
+  { type: 'ZeroOrderHold', label: 'ZOH', icon: <Pause size={16} />, category: 'Discrete' },
+  { type: 'DiscreteFilter', label: 'D-Filter', icon: <Server size={16} />, category: 'Discrete' },
   { type: 'Mux', label: 'Mux', icon: <ArrowRightLeft size={16} />, category: 'Routing' },
   { type: 'Demux', label: 'Demux', icon: <ArrowRightLeft size={16} />, category: 'Routing' },
   { type: 'InPort', label: 'InPort', icon: <LogIn size={16} />, category: 'Ports' },

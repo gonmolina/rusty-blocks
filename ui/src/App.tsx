@@ -29,7 +29,11 @@ import {
   OutPortNode, 
   FileSinkNode, 
   SubsystemNode,
-  ScopeNode
+  ScopeNode,
+  UnitDelayNode,
+  DiscreteIntegratorNode,
+  ZeroOrderHoldNode,
+  DiscreteFilterNode
 } from './components/nodes/BlockNodes';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { Sidebar } from './components/Sidebar';
@@ -78,6 +82,19 @@ const FlowEditor = () => {
   
   const { screenToFlowPosition } = useReactFlow();
 
+  const rootHasContinuous = useMemo(() => {
+    const hasContinuous = (ns: Node[]): boolean => {
+      return ns.some(n => {
+        if (n.type === 'Integrator') return true;
+        if (n.type === 'Subsystem' && n.data?.internalState?.nodes) {
+          return hasContinuous(n.data.internalState.nodes);
+        }
+        return false;
+      });
+    };
+    return hasContinuous(viewStack[0].nodes);
+  }, [viewStack]);
+
   useEffect(() => {
     setNodes(currentLevel.nodes);
     setEdges(currentLevel.edges);
@@ -121,6 +138,10 @@ const FlowEditor = () => {
     FileSink: FileSinkNode,
     Subsystem: SubsystemNode,
     Scope: ScopeNode,
+    UnitDelay: UnitDelayNode,
+    DiscreteIntegrator: DiscreteIntegratorNode,
+    ZeroOrderHold: ZeroOrderHoldNode,
+    DiscreteFilter: DiscreteFilterNode,
   }), []);
 
   const onConnect = useCallback(
@@ -225,6 +246,11 @@ const FlowEditor = () => {
         body: JSON.stringify({ system, params: simParams }),
       });
       const data = await response.json();
+      if (data.error) {
+        alert(data.error);
+        setIsSimulating(false);
+        return;
+      }
       setResults(data.points);
       setYOffsets(data.y_offsets);
       setOutputWidths(data.output_widths || {});
@@ -321,7 +347,7 @@ const FlowEditor = () => {
 
       </div>
 
-      <SimulationSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} params={simParams} onUpdate={setSimParams} />
+      <SimulationSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} params={simParams} onUpdate={setSimParams} hasContinuousBlocks={rootHasContinuous} />
       
       <ScopeModal 
         isOpen={scopeModalState.isOpen} 
@@ -373,6 +399,10 @@ const getDefaultParams = (type: string) => {
     case 'OutPort': return { width: 1 };
     case 'Subsystem': return { name: "Subsystem", blocks: [], connections: [] };
     case 'Scope': return { name: "Scope", input_widths: [1], viz_config: { colors: ['#2563eb', '#16a34a', '#dc2626', '#ca8a04'] } };
+    case 'UnitDelay': return { ts: 0.1, width: 1 };
+    case 'DiscreteIntegrator': return { ts: 0.1, width: 1 };
+    case 'ZeroOrderHold': return { ts: 0.1, width: 1 };
+    case 'DiscreteFilter': return { ts: 0.1, b: [1.0], a: [], width: 1 };
     default: return {};
   }
 };

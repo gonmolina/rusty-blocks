@@ -203,6 +203,64 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
         );
         break;
 
+      case 'UnitDelay':
+      case 'DiscreteIntegrator':
+        specificFields = (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sample Time (ts)</label>
+              <input type="number" value={params.ts || 0.1} step="0.001" min="0.001" onChange={(e) => handleInputChange('ts', parseFloat(e.target.value) || 0.1)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ancho (width)</label>
+              <input type="number" value={params.width || 1} onChange={(e) => handleInputChange('width', parseInt(e.target.value) || 1)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cond. Iniciales (ic)</label>
+              <JsonArrayInput value={params.ic || [0]} onCommit={v => handleInputChange('ic', v)} validate={Array.isArray} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+          </div>
+        );
+        break;
+
+      case 'ZeroOrderHold':
+        specificFields = (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sample Time (ts)</label>
+              <input type="number" value={params.ts || 0.1} step="0.001" min="0.001" onChange={(e) => handleInputChange('ts', parseFloat(e.target.value) || 0.1)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ancho (width)</label>
+              <input type="number" value={params.width || 1} onChange={(e) => handleInputChange('width', parseInt(e.target.value) || 1)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+          </div>
+        );
+        break;
+
+      case 'DiscreteFilter':
+        specificFields = (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Sample Time (ts)</label>
+              <input type="number" value={params.ts || 0.1} step="0.001" min="0.001" onChange={(e) => handleInputChange('ts', parseFloat(e.target.value) || 0.1)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Ancho (width)</label>
+              <input type="number" value={params.width || 1} onChange={(e) => handleInputChange('width', parseInt(e.target.value) || 1)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Numerador b (JSON)</label>
+              <JsonArrayInput value={params.b || [1.0]} onCommit={v => handleInputChange('b', v)} validate={v => Array.isArray(v) && v.length > 0} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Denominador a (JSON)</label>
+              <JsonArrayInput value={params.a || []} onCommit={v => handleInputChange('a', v)} validate={Array.isArray} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+          </div>
+        );
+        break;
+
       case 'Subsystem':
         specificFields = (
           <div className="space-y-4">

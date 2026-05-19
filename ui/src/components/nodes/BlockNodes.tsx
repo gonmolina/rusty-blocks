@@ -1,6 +1,6 @@
 import type { NodeProps } from 'reactflow';
 import { BaseNode } from './BaseNode';
-import { Activity, Gauge, Hash, PlusCircle, StepForward, ArrowRightLeft, LogIn, LogOut, Disc, Laptop, Monitor } from 'lucide-react';
+import { Activity, Gauge, Hash, PlusCircle, StepForward, ArrowRightLeft, LogIn, LogOut, Disc, Laptop, Monitor, Clock, Pause, Server } from 'lucide-react';
 
 export const IntegratorNode = ({ id, data, selected }: NodeProps) => (
   <BaseNode id={id} title="Integrator" name={data.params?.name} icon={<Activity size={14} />} selected={selected} rotation={data.rotation} inputLabels={["u"]} outputLabels={["y"]}>
@@ -39,6 +39,49 @@ export const SumNode = ({ id, data, selected }: NodeProps) => {
     </BaseNode>
   );
 };
+
+// ── Discrete blocks ────────────────────────────────────────────────────
+
+export const UnitDelayNode = ({ id, data, selected }: NodeProps) => (
+  <BaseNode id={id} title="UnitDelay" name={data.params?.name} icon={<Clock size={14} />} selected={selected} rotation={data.rotation} inputLabels={["u"]} outputLabels={["y"]}>
+    <div className="text-center py-1">
+      <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-dashed border-slate-300">z⁻¹</span>
+      <div className="text-[8px] text-amber-500 mt-1 font-bold">Ts={data.params?.ts || 1}</div>
+    </div>
+  </BaseNode>
+);
+
+export const DiscreteIntegratorNode = ({ id, data, selected }: NodeProps) => (
+  <BaseNode id={id} title="D-Integrator" name={data.params?.name} icon={<Activity size={14} />} selected={selected} rotation={data.rotation} inputLabels={["u"]} outputLabels={["y"]}>
+    <div className="text-center py-1">
+      <span className="text-lg font-serif italic text-amber-600">∫ᴅ</span>
+      <div className="text-[8px] text-amber-500 mt-1 font-bold">Ts={data.params?.ts || 1}</div>
+    </div>
+  </BaseNode>
+);
+
+export const ZeroOrderHoldNode = ({ id, data, selected }: NodeProps) => (
+  <BaseNode id={id} title="ZOH" name={data.params?.name} icon={<Pause size={14} />} selected={selected} rotation={data.rotation} inputLabels={["in"]} outputLabels={["out"]}>
+    <div className="text-center">
+      <div className="flex items-center gap-0.5 justify-center">
+        <div className="w-4 h-6 bg-amber-200 border border-dashed border-amber-400 rounded-sm" />
+        <div className="w-4 h-6 bg-amber-500 border border-dashed border-amber-600 rounded-sm" />
+      </div>
+      <div className="text-[8px] text-amber-500 mt-1 font-bold">Ts={data.params?.ts || 1}</div>
+    </div>
+  </BaseNode>
+);
+
+export const DiscreteFilterNode = ({ id, data, selected }: NodeProps) => (
+  <BaseNode id={id} title="D-Filter" name={data.params?.name} icon={<Server size={14} />} selected={selected} rotation={data.rotation} inputLabels={["u"]} outputLabels={["y"]}>
+    <div className="text-center py-1">
+      <span className="text-[10px] font-mono text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-dashed border-amber-300">b(z)/a(z)</span>
+      <div className="text-[8px] text-amber-500 mt-1 font-bold">Ts={data.params?.ts || 1}</div>
+    </div>
+  </BaseNode>
+);
+
+// ── Continuous blocks (continued) ──────────────────────────────────────
 
 export const StepNode = ({ id, data, selected }: NodeProps) => (
   <BaseNode id={id} title="Step" name={data.params?.name} icon={<StepForward size={14} />} inputs={0} selected={selected} rotation={data.rotation} outputLabels={["out"]}>

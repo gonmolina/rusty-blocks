@@ -4,7 +4,7 @@ import { Settings, X } from 'lucide-react';
 export interface SimulationParams {
   dt: number;
   t_final: number;
-  solver: 'Euler' | 'RK4' | 'RK45';
+  solver: 'Euler' | 'RK4' | 'RK45' | 'Hybrid' | 'Discrete';
   atol: number;
   rtol: number;
 }
@@ -14,13 +14,15 @@ interface SimulationSettingsProps {
   onClose: () => void;
   params: SimulationParams;
   onUpdate: (params: SimulationParams) => void;
+  hasContinuousBlocks?: boolean;
 }
 
 export const SimulationSettings: React.FC<SimulationSettingsProps> = ({ 
   isOpen, 
   onClose, 
   params, 
-  onUpdate 
+  onUpdate,
+  hasContinuousBlocks = false,
 }) => {
   if (!isOpen) return null;
 
@@ -75,7 +77,14 @@ export const SimulationSettings: React.FC<SimulationSettingsProps> = ({
               <option value="Euler">Euler (Paso Fijo)</option>
               <option value="RK4">Runge-Kutta 4 (Paso Fijo)</option>
               <option value="RK45">Dormand-Prince (Paso Variable)</option>
+              <option value="Hybrid">Hybrid (Continuo + Discreto)</option>
+              <option value="Discrete" disabled={hasContinuousBlocks}>Discrete (Solo Discreto)</option>
             </select>
+            {hasContinuousBlocks && (
+              <p className="text-[9px] text-amber-600 font-bold mt-1 leading-tight">
+                ⚠ El sistema contiene bloques continuos (Integrator). El solver Discrete no está disponible.
+              </p>
+            )}
           </div>
 
           {params.solver === 'RK45' && (
