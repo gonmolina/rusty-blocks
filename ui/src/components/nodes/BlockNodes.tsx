@@ -107,8 +107,10 @@ export const SubsystemNode = ({ id, data, selected }: NodeProps) => (
   </BaseNode>
 );
 
-export const ScopeNode = ({ id, data, selected }: NodeProps) => (
-  <BaseNode id={id} title="Scope" name={data.params?.name} icon={<Monitor size={14} />} outputs={0} selected={selected} rotation={data.rotation} inputLabels={["in"]}>
+export const ScopeNode = ({ id, data, selected }: NodeProps) => {
+  const inputWidths: number[] = data.params?.input_widths || [1];
+  return (
+  <BaseNode id={id} title="Scope" name={data.params?.name} icon={<Monitor size={14} />} outputs={0} selected={selected} rotation={data.rotation} inputs={inputWidths.length} inputLabels={inputWidths.map((_, i) => `ch${i+1}`)}>
     <div className="flex flex-col items-center gap-1">
       <div className="w-12 h-8 bg-slate-950 rounded border border-slate-800 overflow-hidden relative shadow-inner">
         <div className="absolute inset-0 flex items-center justify-around opacity-10">
@@ -122,4 +124,5 @@ export const ScopeNode = ({ id, data, selected }: NodeProps) => (
       <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Double click</span>
     </div>
   </BaseNode>
-);
+  );
+};

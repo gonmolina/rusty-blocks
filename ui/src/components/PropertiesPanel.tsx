@@ -1,6 +1,40 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { Node } from 'reactflow';
 import { RotateCw, Type } from 'lucide-react';
+
+const JsonArrayInput: React.FC<{
+  value: any;
+  onCommit: (val: any) => void;
+  validate?: (val: any) => boolean;
+  className?: string;
+}> = ({ value, onCommit, validate, className }) => {
+  const [text, setText] = useState(() => JSON.stringify(value));
+  useEffect(() => { setText(JSON.stringify(value)); }, [value]);
+  const blur = () => {
+    try {
+      const val = JSON.parse(text);
+      if (!validate || validate(val)) onCommit(val);
+      else setText(JSON.stringify(value));
+    } catch { setText(JSON.stringify(value)); }
+  };
+  return <input type="text" value={text} onChange={e => setText(e.target.value)} onBlur={blur} onKeyDown={e => {if(e.key==='Enter')blur()}} className={className} />;
+};
+
+const OptionalNumberInput: React.FC<{
+  value: number | undefined;
+  onCommit: (val: number | undefined) => void;
+  placeholder?: string;
+  className?: string;
+}> = ({ value, onCommit, placeholder, className }) => {
+  const [text, setText] = useState(() => value !== undefined ? String(value) : '');
+  useEffect(() => { setText(value !== undefined ? String(value) : ''); }, [value]);
+  const blur = () => {
+    const t = text.trim();
+    if (t === '' || t === '-') onCommit(undefined);
+    else { const n = parseFloat(t); if (!isNaN(n)) onCommit(n); else setText(value !== undefined ? String(value) : ''); }
+  };
+  return <input type="number" value={text} placeholder={placeholder} onChange={e => setText(e.target.value)} onBlur={blur} onKeyDown={e => {if(e.key==='Enter')blur()}} className={className} />;
+};
 
 interface PropertiesPanelProps {
   selectedNode: Node | null;
@@ -73,7 +107,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Condiciones Iniciales (ic)</label>
-              <input type="text" value={JSON.stringify(params.ic || [0])} onChange={(e) => { try { const val = JSON.parse(e.target.value); if (Array.isArray(val)) handleInputChange('ic', val); } catch (e) {} }} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+              <JsonArrayInput value={params.ic || [0]} onCommit={v => handleInputChange('ic', v)} validate={Array.isArray} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
             </div>
           </div>
         );
@@ -84,7 +118,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Valor</label>
-              <input type="text" value={JSON.stringify(params.value || [0])} onChange={(e) => { try { const val = JSON.parse(e.target.value); if (Array.isArray(val)) handleInputChange('value', val); } catch (e) {} }} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+              <JsonArrayInput value={params.value || [0]} onCommit={v => handleInputChange('value', v)} validate={Array.isArray} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
             </div>
           </div>
         );
@@ -125,7 +159,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Anchos de Entrada</label>
-              <input type="text" value={JSON.stringify(params.input_widths)} onChange={(e) => { try { const val = JSON.parse(e.target.value); if (Array.isArray(val)) handleInputChange('input_widths', val); } catch (e) {} }} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+              <JsonArrayInput value={params.input_widths} onCommit={v => handleInputChange('input_widths', v)} validate={Array.isArray} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
             </div>
           </div>
         );
@@ -136,7 +170,7 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Anchos de Salida</label>
-              <input type="text" value={JSON.stringify(params.output_widths)} onChange={(e) => { try { const val = JSON.parse(e.target.value); if (Array.isArray(val)) handleInputChange('output_widths', val); } catch (e) {} }} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+              <JsonArrayInput value={params.output_widths} onCommit={v => handleInputChange('output_widths', v)} validate={Array.isArray} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
             </div>
           </div>
         );
@@ -175,6 +209,46 @@ export const PropertiesPanel: React.FC<PropertiesPanelProps> = ({
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre</label>
               <input type="text" value={params.name} onChange={(e) => handleInputChange('name', e.target.value)} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+          </div>
+        );
+        break;
+
+      case 'Scope':
+        specificFields = (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Anchos de Entrada (1-4)</label>
+              <JsonArrayInput value={params.input_widths || [1]} onCommit={v => handleInputChange('input_widths', v)} validate={v => Array.isArray(v) && v.length > 0 && v.length <= 4} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+            </div>
+            <div className="border-t border-slate-100 pt-4">
+              <label className="block text-[10px] font-black text-purple-600 uppercase tracking-widest mb-3">Visualización</label>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Colores (JSON)</label>
+                  <JsonArrayInput value={params.viz_config?.colors || ['#2563eb','#16a34a','#dc2626','#ca8a04']} onCommit={v => handleInputChange('viz_config', { ...params.viz_config, colors: v })} validate={Array.isArray} className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-[10px]" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Y min</label>
+                    <OptionalNumberInput value={params.viz_config?.y_min} onCommit={v => handleInputChange('viz_config', { ...params.viz_config, y_min: v })} placeholder="auto" className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Y max</label>
+                    <OptionalNumberInput value={params.viz_config?.y_max} onCommit={v => handleInputChange('viz_config', { ...params.viz_config, y_max: v })} placeholder="auto" className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">T min (s)</label>
+                    <OptionalNumberInput value={params.viz_config?.t_min} onCommit={v => handleInputChange('viz_config', { ...params.viz_config, t_min: v })} placeholder="auto" className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">T max (s)</label>
+                    <OptionalNumberInput value={params.viz_config?.t_max} onCommit={v => handleInputChange('viz_config', { ...params.viz_config, t_max: v })} placeholder="auto" className="w-full p-2 bg-slate-50 border border-slate-200 rounded-md font-mono text-sm" />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         );

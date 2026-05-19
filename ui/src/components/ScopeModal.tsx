@@ -8,7 +8,8 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  Legend 
+  Legend,
+  Brush
 } from 'recharts';
 
 interface ScopeModalProps {
@@ -16,9 +17,16 @@ interface ScopeModalProps {
   onClose: () => void;
   title: string;
   data: any[];
+  vizConfig?: {
+    colors?: string[];
+    y_min?: number;
+    y_max?: number;
+    t_min?: number;
+    t_max?: number;
+  };
 }
 
-export const ScopeModal: React.FC<ScopeModalProps> = ({ isOpen, onClose, title, data }) => {
+export const ScopeModal: React.FC<ScopeModalProps> = ({ isOpen, onClose, title, data, vizConfig }) => {
   if (!isOpen) return null;
 
   const downloadCSV = () => {
@@ -76,28 +84,43 @@ export const ScopeModal: React.FC<ScopeModalProps> = ({ isOpen, onClose, title, 
                 <XAxis 
                   dataKey="t" 
                   type="number" 
-                  domain={['auto', 'auto']} 
+                  domain={[
+                    vizConfig?.t_min ?? 'auto',
+                    vizConfig?.t_max ?? 'auto'
+                  ]} 
                   stroke="#94a3b8" 
                   fontSize={10} 
                   tickFormatter={(val) => `${val.toFixed(2)}s`}
                 />
-                <YAxis stroke="#94a3b8" fontSize={10} />
+                <YAxis 
+                  stroke="#94a3b8" 
+                  fontSize={10} 
+                  domain={[
+                    vizConfig?.y_min ?? 'auto',
+                    vizConfig?.y_max ?? 'auto'
+                  ]}
+                />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.95)', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
                   labelStyle={{ fontWeight: 'bold', color: '#1e293b' }}
                 />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
-                {Object.keys(data[0]).filter(k => k !== 't').map((key, i) => (
+                {Object.keys(data[0]).filter(k => k !== 't').map((key, i) => {
+                  const defaultColors = ['#2563eb', '#16a34a', '#dc2626', '#ca8a04'];
+                  const customColors = vizConfig?.colors || defaultColors;
+                  return (
                    <Line 
                     key={key} 
                     type="monotone" 
                     dataKey={key} 
-                    stroke={['#2563eb', '#16a34a', '#dc2626', '#ca8a04'][i % 4]} 
+                    stroke={customColors[i] || defaultColors[i % 4]} 
                     strokeWidth={3} 
                     dot={false}
                     animationDuration={500}
                   />
-                ))}
+                  );
+                })}
+                <Brush dataKey="t" height={30} stroke="#94a3b8" fill="#f8fafc" />
               </LineChart>
             </ResponsiveContainer>
           ) : (

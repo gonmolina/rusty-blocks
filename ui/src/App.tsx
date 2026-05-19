@@ -15,6 +15,7 @@ import type {
   Node,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { LayoutDashboard } from 'lucide-react';
 
 import { 
   IntegratorNode, 
@@ -32,9 +33,9 @@ import {
 } from './components/nodes/BlockNodes';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { Sidebar } from './components/Sidebar';
-import { ResultsChart } from './components/ResultsChart';
 import { SimulationSettings, type SimulationParams } from './components/SimulationSettings';
 import { ScopeModal } from './components/ScopeModal';
+import { Dashboard } from './components/Dashboard';
 import { exportProject, downloadJson, handleLoad, convertToSystemConfig } from './utils/persistence';
 
 interface ViewLevel {
@@ -66,9 +67,11 @@ const FlowEditor = () => {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [results, setResults] = useState<any[]>([]);
   const [yOffsets, setYOffsets] = useState<Record<string, number>>({});
+  const [outputWidths, setOutputWidths] = useState<Record<string, number[]>>({});
   const [isSimulating, setIsSimulating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [scopeModalState, setScopeModalState] = useState<{ isOpen: boolean; title: string; data: any[] }>({ isOpen: false, title: '', data: [] });
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [scopeModalState, setScopeModalState] = useState<{ isOpen: boolean; title: string; data: any[]; vizConfig?: any }>({ isOpen: false, title: '', data: [] });
   const [simParams, setSimParams] = useState<SimulationParams>({
     dt: 0.1, t_final: 10.0, solver: 'RK45', atol: 1e-8, rtol: 1e-4
   });
@@ -140,10 +143,12 @@ const FlowEditor = () => {
         return next;
       });
     } else if (node.type === 'Scope') {
+      const scopeNode = nodes.find(n => n.id === node.id);
       setScopeModalState({ 
         isOpen: true, 
         title: node.data.params?.name || "Scope Viewer", 
-        data: getScopeData(node.id) 
+        data: getScopeData(node.id),
+        vizConfig: scopeNode?.data?.params?.viz_config
       });
     } else if (node.type === 'FileSink') {
       const filename = node.data.params?.filename || 'output.csv';
@@ -222,6 +227,7 @@ const FlowEditor = () => {
       const data = await response.json();
       setResults(data.points);
       setYOffsets(data.y_offsets);
+      setOutputWidths(data.output_widths || {});
     } catch (err) {
       alert("Error al conectar con el servidor de simulación");
     } finally {
@@ -231,16 +237,31 @@ const FlowEditor = () => {
 
   const getScopeData = (nodeId: string) => {
     if (results.length === 0) return [];
-    const incomingEdge = edges.find(e => e.target === nodeId);
-    if (!incomingEdge) return [];
-    const sourceBlockId = incomingEdge.source;
-    const sourcePort = parseInt(incomingEdge.sourceHandle?.split('-')[1] || '0');
-    const offset = yOffsets[sourceBlockId];
-    if (offset === undefined) return [];
-    return results.map(p => ({
-      t: p.t,
-      signal: p.y[offset + sourcePort]
-    }));
+    const incomingEdges = edges.filter(e => e.target === nodeId);
+    if (incomingEdges.length === 0) return [];
+    return results.map(p => {
+      const entry: any = { t: p.t };
+      let chIdx = 1;
+      incomingEdges.forEach((edge) => {
+        const sourceBlockId = edge.source;
+        const sourcePortIdx = parseInt(edge.sourceHandle?.split('-')[1] || '0');
+        const blockOffset = yOffsets[sourceBlockId];
+        if (blockOffset === undefined) return;
+        // Compute byte offset within source's y buffer (sum prior port widths)
+        const portWidths = outputWidths[sourceBlockId] || [1];
+        let portByteOffset = 0;
+        for (let p = 0; p < sourcePortIdx; p++) {
+          portByteOffset += portWidths[p] || 0;
+        }
+        const width = portWidths[sourcePortIdx] || 1;
+        const startIdx = blockOffset + portByteOffset;
+        for (let w = 0; w < width; w++) {
+          entry[`ch${chIdx}`] = p.y[startIdx + w];
+          chIdx++;
+        }
+      });
+      return entry;
+    });
   };
 
   return (
@@ -266,9 +287,18 @@ const FlowEditor = () => {
               </button>
             </div>
           ))}
+          {results.length > 0 && (
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[9px] font-bold text-green-600 uppercase tracking-wider">{results.length} pts</span>
+              <button onClick={() => setShowDashboard(true)} className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 text-white rounded-md text-[9px] font-bold hover:bg-slate-800 transition-all uppercase tracking-wider">
+                <LayoutDashboard size={11} /> Dashboard
+              </button>
+              <button onClick={() => setResults([])} className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase transition-colors">×</button>
+            </div>
+          )}
         </div>
 
-        <div className={results.length > 0 ? "h-2/3 border-b border-slate-200" : "flex-1"}>
+        <div className="flex-1">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -288,12 +318,7 @@ const FlowEditor = () => {
           </ReactFlow>
         </div>
 
-        {results.length > 0 && (
-          <div className="h-1/3 bg-slate-50 p-4 relative overflow-hidden">
-             <button onClick={() => setResults([])} className="absolute top-6 right-6 z-20 text-xs font-bold text-slate-400 hover:text-slate-600 uppercase transition-colors">Cerrar</button>
-            <ResultsChart data={results} />
-          </div>
-        )}
+
       </div>
 
       <SimulationSettings isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} params={simParams} onUpdate={setSimParams} />
@@ -303,6 +328,17 @@ const FlowEditor = () => {
         onClose={() => setScopeModalState({ ...scopeModalState, isOpen: false })}
         title={scopeModalState.title}
         data={scopeModalState.data}
+        vizConfig={scopeModalState.vizConfig}
+      />
+
+      <Dashboard
+        isOpen={showDashboard}
+        onClose={() => setShowDashboard(false)}
+        results={results}
+        yOffsets={yOffsets}
+        outputWidths={outputWidths}
+        nodes={nodes}
+        edges={edges}
       />
 
       {isSimulating && (
@@ -336,7 +372,7 @@ const getDefaultParams = (type: string) => {
     case 'InPort': return { width: 1 };
     case 'OutPort': return { width: 1 };
     case 'Subsystem': return { name: "Subsystem", blocks: [], connections: [] };
-    case 'Scope': return { name: "Scope" };
+    case 'Scope': return { name: "Scope", input_widths: [1], viz_config: { colors: ['#2563eb', '#16a34a', '#dc2626', '#ca8a04'] } };
     default: return {};
   }
 };
