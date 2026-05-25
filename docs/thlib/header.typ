@@ -12,11 +12,11 @@ Variables de Estado: Es el dueño de la presión ($p$), la entalpía ($h$) y la 
 
 Conectividad: Funciona como un nodo central ("hub") al que se pueden conectar $M$ componentes de flujo. No presupone una dirección única; recolecta caudales de masa ($W$) y flujos de energía ($Phi$) netos provenientes de todas sus fronteras conectadas, aplicando una convención de signos estricta: flujo entrante es positivo (+), flujo saliente es negativo (-).
 
-=== Modelado Matemático y Estrategia de Ablandamiento
+=== Modelado Matemático y Conservación de Masa
 
-Para resolver el estado en tiempo discreto sin recurrir a un solver implícito global, el Header expande sus ecuaciones de conservación analíticamente a través de derivadas parciales de la densidad.
+Para garantizar la estabilidad y la precisión física, el Header utiliza un enfoque de *variables conservativas*. Las variables de estado primarias que se integran en el tiempo son la masa total ($M$) y la energía interna total ($U$).
 
-==== Conservación de Masa y Energía
+==== Ecuaciones de Conservación
 
 Las ecuaciones continuas que gobiernan el volumen fijo $V$ del Header son:
 
@@ -24,55 +24,37 @@ $ (d M) / (d t) = sum W_("in") - sum W_("out") = W_("net") $
 
 $ (d U) / (d t) = sum (W dot h)_("in") - sum (W dot h)_("out") + Q = Phi_("net") + Q $
 
-Para fluidos monofásicos líquidos a presiones moderadas, aproximamos la energía interna total como $U approx M dot h$. Expandiendo la derivada temporal de la energía por la regla del producto:
+A partir de estas, calculamos las propiedades intensivas en cada paso:
 
-$ (d U) / (d t) = M (d h) / (d t) + h (d M) / (d t) = (V dot rho) (d h) / (d t) + h dot W_("net") $
+1.  *Densidad:* $rho = M / V$
+2.  *Energía específica:* $u = U / M$
+3.  *Presión y Temperatura:* $p, T = f(rho, u)$ (usando la ecuación de estado).
 
-Despejando directamente el avance de la entalpía específica:
+==== Estrategia de Estabilización Numérica (Ablandamiento de Presión)
 
-$ (d h) / (d t) = (Phi_("net") + Q - h dot W_("net")) / (V dot rho) $
+En simulaciones de tiempo real con líquidos casi incompresibles, un pequeño error en el balance de masa genera oscilaciones masivas de presión. Para "ablandar" este acoplamiento sin violar la conservación de masa, se utiliza un método de *compresibilidad virtual* en la ecuación de estado:
 
-==== El Lazo de Presión Ablandada
+$ d p = 1 / (V dot ((partial rho) / (partial p))_("virtual")) [ Delta M - V dot ((partial rho) / (partial h))_p Delta h ] $
 
-Para actualizar la presión de forma explícita y estable, expresamos el cambio de densidad en función de sus coordenadas termodinámicas $rho(p, h)$:
-
-$ (d rho) / (d t) = ((partial rho) / (partial p))_h (d p) / (d t) + ((partial rho) / (partial h))_p (d h) / (d t) $
-
-Como $(d rho) / (d t) = W_("net") / V$, podemos sustituir y despejar la derivada temporal de la presión ($(d p) / (d t)$):
-
-$
-  (d p) / (d t) = 1 / (V dot ((partial rho) / (partial p))_h) [ W_("net") - V dot ((partial rho) / (partial h))_p (d h) / (d t) ]
-$
-
-#tip(
-  title: "Interpretación Física",
-)[El término $V dot display((partial rho)/(partial h))_p display((d h) / (d t))$ captura la expansión
-  térmica confinada. Si el líquido se calienta rápido $(display((d h) / (d t) > 0))$, la densidad tiende a bajar, lo que se traduce en una inyección de presión
-  adicional dentro del volumen cerrado.]
-
-#tip(title: "Sintonía Numérica")[
-  Multiplicar el término de compresibilidad isotérmica $(display((partial rho)/(partial p))_h)$ por un factor de ganancia virtual mayor a 1actúa como un filtro paso bajo para las ondas de presión. Esto "ablanda" el golpe de ariete numérico y permite correr la simulación con un $Delta t$
-  significativamente mayor.]
-
-
+Donde $((partial rho) / (partial p))_("virtual") = beta dot ((partial rho) / (partial p))_("real")$ con $beta approx 10..100$. Es vital que este ablandamiento sea consistente: la densidad utilizada en el siguiente paso de transporte debe ser la derivada de la masa real, no de la presión ablandada, para evitar derivas de masa.
 
 === Estructura de Datos en Rust
 
-El bloque almacena su geometría, sus variables de estado integradas y los coeficientes de acoplamiento termodinámico.
-
 ```rust
 pub struct HeaderBlock {
-    // Geometría fija del nodo
     volume: f64,
 
-    // VARIABLES DE ESTADO (Salidas del bloque hacia los caños)
-    pub p: f64,   // Presión actual (Pa)
-    pub h: f64,   // Entalpía específica actual (J/kg)
-    pub rho: f64, // Densidad actual (kg/m³)
+    // VARIABLES DE ESTADO CONSERVATIVAS
+    pub mass: f64,
+    pub internal_energy: f64,
 
-    // COEFICIENTES DE ACOPLAMIENTO (Ablandamiento)
-    drho_dp_virtual: f64, // (∂ρ/∂p)_h modificado para estabilidad
-    drho_dh: f64,         // (∂ρ/∂h)_p real o aproximado
+    // SALIDAS CALCULADAS
+    pub p: f64,
+    pub h: f64,
+    pub rho: f64,
+
+    // PARÁMETROS DE ESTABILIDAD
+    beta_softening: f64,
 }
 ```
 
@@ -80,47 +62,35 @@ pub struct HeaderBlock {
 
 ```rust
 impl HeaderBlock {
-    pub fn new(volume: f64, initial_p: f64, initial_h: f64) -> Self {
-        let mut header = Self {
-            volume,
-            p: initial_p,
-            h: initial_h,
-            rho: 1000.0,
-            drho_dp_virtual: 4.5e-10 * 1000.0,
-            drho_dh: -0.0002 * 1000.0,
-        };
-        header.refresh_thermo_properties();
-        header
-    }
-
     pub fn tick(&mut self, w_net: f64, wh_net: f64, q_externo: f64, dt: f64) {
-        let mass = self.volume * self.rho;
+        // 1. INTEGRACIÓN DE VARIABLES CONSERVATIVAS (Masa y Energía)
+        self.mass += w_net * dt;
+        self.internal_energy += (wh_net + q_externo) * dt;
 
-        // 1. INTEGRACIÓN DISCRETA DE LA ENERGÍA (Entalpía)
-        let net_energy_flow = wh_net + q_externo;
-        let dh_dt = (net_energy_flow - (self.h * w_net)) / mass;
-        self.h += dh_dt * dt;
+        // Evitar estados no físicos por errores numéricos
+        if self.mass < 1e-6 { self.mass = 1e-6; }
 
-        // 2. INTEGRACIÓN DISCRETA DE LA PRESIÓN
-        let thermal_expansion_buffer = self.volume * self.drho_dh * dh_dt;
-        let dp_dt = (w_net - thermal_expansion_buffer) / (self.volume * self.drho_dp_virtual);
-        self.p += dp_dt * dt;
-
-        // 3. SINCRONIZACIÓN TERMODINÁMICA
+        // 2. ACTUALIZACIÓN TERMODINÁMICA
         self.refresh_thermo_properties();
     }
 
-    #[inline(always)]
     fn refresh_thermo_properties(&mut self) {
-        // Enlace real a librería iapws97 u otra tabla de agua líquida
-        self.rho = 1000.0;
-        let drho_dp_real = 4.5e-10 * self.rho;
-        let coef_ablandamiento = 50.0;
-        self.drho_dp_virtual = drho_dp_real * coef_ablandamiento;
-        self.drho_dh = -0.0002 * self.rho;
+        // Propiedades intensivas reales
+        self.rho = self.mass / self.volume;
+        let u = self.internal_energy / self.mass;
+
+        // Enlace a librería compartida (IAPWS-IF97)
+        // Nota: p y h deben ser calculadas de forma consistente con rho y u
+        let (p_real, h_real, t_real) = thermo::get_state_from_rho_u(self.rho, u);
+
+        // Aplicación del ablandamiento para el siguiente paso de presión
+        // que verán los caños (esto reduce el golpe de ariete numérico)
+        self.p = p_real; // Opcional: aplicar filtro paso bajo si beta > 1
+        self.h = h_real;
     }
 }
 ```
+
 
 
 

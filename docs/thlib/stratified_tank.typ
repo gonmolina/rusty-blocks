@@ -45,75 +45,51 @@ $ Q_("cond", i arrow i+1) = (k dot A) / (Delta x) (T_i - T_(i+1)) $
 
 Donde $k$ es la conductividad térmica del agua, $A$ es el área transversal del tanque y $Delta x$ es la distancia entre los centros de las capas.
 
-==== Mezclado por Inestabilidad del Flujo (Inversión de Densidad)
+==== Mezclado por Inversión de Densidad (Penacho Convectivo)
 
-Si ingresa agua fría en la capa superior o agua caliente en la inferior, el sistema se vuelve hidrodinámicamente inestable. El agua pesada cae y la liviana sube, generando mezclado turbulento macroscópico.
+Si $rho_(i) > rho_(i-1)$ (la capa de arriba es más densa que la de abajo), se produce una inestabilidad de Rayleigh-Taylor. En lugar de una conducción simple, modelamos un *caudal de intercambio turbulento* ($W_("turb")$) que mezcla ambas capas rápidamente:
 
-Modelado: Si $T_(i+1) > T_i$ (la capa de abajo está más caliente que la de arriba), calculamos un coeficiente de mezclado masivo ($k_("mix")$) que transfiere energía de forma casi instantánea hasta que las densidades se ordenen.
+$ W_("turb") = C_("mix") dot A dot sqrt(g dot L_("char") dot (Delta rho / rho)) $
 
-=== Implementación en Rust (Modelo de 3 Capas)
+Este caudal extrae masa y energía de ambas capas y las promedia, simulando la caída de penachos fríos.
+
+=== Implementación en Rust (Modelo de 3 Capas Conservativo)
 
 ```rust
-
 pub struct StratifiedTank {
-    volume_layer: f64, // Volumen de cada capa (m³)
-    area: f64,         // Área transversal (m²)
-    dx: f64,           // Distancia entre centros de capas (m)
+    volume_layer: f64, 
+    area: f64,
+    dx: f64,
+    k_water: f64,
+    mix_factor: f64,
 
     // Variables de estado [0: Top, 1: Mid, 2: Bottom]
+    // Integración de masa y energía por capa
+    pub m: [f64; 3],
+    pub u: [f64; 3],
+
+    // Salidas calculadas
     pub p: f64,
     pub h: [f64; 3],
     pub t: [f64; 3],
     pub rho: [f64; 3],
-
-    // Parámetros de mezcla
-    k_water: f64,      // Conductividad térmica del agua (~0.6 W/mK)
-    mix_factor: f64,   // Multiplicador de mezcla turbulenta por inversión
 }
 
 impl StratifiedTank {
-    pub fn new(total_volume: f64, area: f64, initial_p: f64, initial_t: f64) -> Self {
-        let vol_layer = total_volume / 3.0;
-        let dx = vol_layer / area;
-
-        Self {
-            volume_layer: vol_layer,
-            area,
-            dx,
-            p: initial_p,
-            h: [4184.0 * (initial_t - 273.15); 3],
-            t: [initial_t; 3],
-            rho: [1000.0; 3],
-            k_water: 0.6,
-            mix_factor: 50.0,
-        }
-    }
-
     pub fn tick(&mut self, w_top: f64, wh_top: f64, w_bot: f64, wh_bot: f64, dt: f64) {
-        let w_internal = w_top;
+        // 1. BALANCES DE MASA Y ENERGÍA
+        let w_net = w_top; 
 
-        let q_inter_01 = self.calc_layer_exchange(0, 1);
-        let q_inter_12 = self.calc_layer_exchange(1, 2);
+        for i in 0..3 {
+            // Flujos convectivos internos (entre capas, Upwind)
+            // (Simplificado para ilustración)
+            let _wh_01 = if w_net > 0.0 { w_net * self.h[1] } else { w_net * self.h[0] };
+            
+            // Intercambio por conducción y mezcla turbulenta
+            let _q_mix_01 = self.calc_layer_exchange(0, 1);
 
-        // --- CAPA 0 (TOP) ---
-        let mass_0 = self.volume_layer * self.rho[0];
-        let conv_01 = if w_internal > 0.0 { -w_internal * self.h[0] } else { -w_internal * self.h[1] };
-        let dh0_dt = (wh_top + conv_01 - q_inter_01) / mass_0;
-
-        // --- CAPA 1 (MID) ---
-        let mass_1 = self.volume_layer * self.rho[1];
-        let conv_10 = if w_internal > 0.0 { w_internal * self.h[0] } else { w_internal * self.h[1] };
-        let conv_12 = if w_internal > 0.0 { -w_internal * self.h[1] } else { -w_internal * self.h[2] };
-        let dh1_dt = (conv_10 + conv_12 + q_inter_01 - q_inter_12) / mass_1;
-
-        // --- CAPA 2 (BOTTOM) ---
-        let mass_2 = self.volume_layer * self.rho[2];
-        let conv_21 = if w_internal > 0.0 { w_internal * self.h[1] } else { w_internal * self.h[2] };
-        let dh2_dt = (wh_bot + conv_21 + q_inter_12) / mass_2;
-
-        self.h[0] += dh0_dt * dt;
-        self.h[1] += dh1_dt * dt;
-        self.h[2] += dh2_dt * dt;
+            // Integración de m[i] y u[i]...
+        }
 
         self.refresh_properties();
     }
@@ -121,20 +97,25 @@ impl StratifiedTank {
     fn calc_layer_exchange(&self, i: usize, j: usize) -> f64 {
         let q_cond = (self.k_water * self.area / self.dx) * (self.t[i] - self.t[j]);
 
-        let q_mix = if self.t[j] > self.t[i] {
-            (self.t[j] - self.t[i]) * (self.k_water * self.area / self.dx) * self.mix_factor
-        } else {
-            0.0
-        };
-
-        q_cond - q_mix
+        // Si la densidad de la capa superior (i) es mayor que la inferior (j)
+        if self.rho[i] > self.rho[j] {
+            let w_turb = self.mix_factor * self.area * (self.rho[i] - self.rho[j]).sqrt();
+            let q_turb = w_turb * (self.h[i] - self.h[j]);
+            return q_cond + q_turb;
+        }
+        q_cond
     }
 
     fn refresh_properties(&mut self) {
         for i in 0..3 {
-            self.t[i] = 273.15 + (self.h[i] / 4184.0);
-            self.rho[i] = 1000.0 * (1.0 - 0.0002 * (self.t[i] - 293.15));
+            self.rho[i] = self.m[i] / self.volume_layer;
+            let u_spec = self.u[i] / self.m[i];
+            
+            let (p, h, t) = thermo::get_state_from_rho_u(self.rho[i], u_spec);
+            self.h[i] = h;
+            self.t[i] = t;
         }
+        // p se actualiza según la red de presión
     }
 }
 ```

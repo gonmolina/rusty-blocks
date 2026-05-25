@@ -51,14 +51,7 @@
 )
 
 // Estilo para notas destacadas
-#let nota(body) = rect(
-  fill: rgb("f1f5f9"),
-  stroke: (left: 4pt + rgb("0284c7")),
-  inset: (x: 12pt, y: 10pt),
-  radius: (right: 4pt),
-  width: 100%,
-  body,
-)
+#import "theme.typ": nota
 
 // --- PORTADA ---
 #place(top + left, dy: 5cm)[
@@ -129,3 +122,18 @@
 #pagebreak()
 
 #include "stratified_tank.typ"
+#pagebreak()
+
+= API de Propiedades Termodinámicas
+
+#include "thermo_api.typ"
+#pagebreak()
+
+= Ejemplos de Sistemas Complejos
+
+#include "complex_example.typ"
+#pagebreak()
+
+= Arquitectura de Integración con el Motor de Bloques
+
+#include "integration.typ"

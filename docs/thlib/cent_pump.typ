@@ -65,48 +65,42 @@ impl LookupTable1D {
 
 === Estructura e Implementación del Bloque Bomba
 
-Para que la bomba sea numéricamente estable, volvemos a aplicar el truco del Semi-Implícito que usamos en el caño. Sin embargo, hay un detalle crítico: la curva de la bomba tiene pendiente negativa (a más caudal, menos presión). Esto actúa como un amortiguador de forma natural, pero si la bomba se apaga o el flujo se invierte, las pérdidas internas (fricción de rotor parado) deben predominar para frenar el fluido.
-
 ```rust
 pub struct CentrifugalPumpBlock {
-    // Geometría interna equivalente (Inercia del fluido dentro de la carcasa)
-    inertia_gain: f64, // (dt * A) / L
+    // Geometría interna (Independiente del dt)
+    geom_inertia: f64, // A / L
 
     // Curva característica a velocidad nominal
     curve_table: LookupTable1D,
-    n_nominal: f64,     // RPM nominales (ej. 1500.0)
-    rho_nominal: f64,   // Densidad de diseño (ej. 1000.0)
+    n_nominal: f64,
+    rho_nominal: f64,
 
-    // Pérdida de carga pasiva (cuando la bomba actúa como restricción)
     fric_factor_pasivo: f64,
-
-    // Memoria de estado z^-1
     w_last: f64,
 }
 
 impl CentrifugalPumpBlock {
     pub fn tick(&mut self, p_in: f64, p_out: f64, rho: f64, speed: f64, dt: f64) -> f64 {
         let delta_p_headers = p_in - p_out;
+        let inertia_dt = self.geom_inertia * dt;
 
         let speed_ratio = speed / self.n_nominal;
         let rho_ratio = rho / self.rho_nominal;
 
         let dp_bomba = if speed_ratio.abs() > 1e-3 && self.w_last >= 0.0 {
-            // --- MODO ACTIVO (Flujo directo y bomba girando) ---
             let w_nominal_look = self.w_last / (speed_ratio * rho_ratio);
             let dp_nominal_look = self.curve_table.interpolate(w_nominal_look);
             dp_nominal_look * speed_ratio.powi(2) * rho_ratio
         } else {
-            // --- MODO PASIVO O FLUJO INVERSO ---
             0.0
         };
 
         // --- ECUACIÓN DE MOMENTO SEMI-IMPLÍCITA ---
-        let numerator = self.w_last + self.inertia_gain * (delta_p_headers + dp_bomba);
+        let numerator = self.w_last + inertia_dt * (delta_p_headers + dp_bomba);
 
         let w_mod = f64::max(self.w_last.abs(), 1e-4);
         let k_fric = if self.w_last >= 0.0 { self.fric_factor_pasivo } else { self.fric_factor_pasivo * 5.0 };
-        let denominator = 1.0 + self.inertia_gain * (k_fric / rho) * w_mod;
+        let denominator = 1.0 + inertia_dt * (k_fric / rho) * w_mod;
 
         let w_current = numerator / denominator;
         self.w_last = w_current;
@@ -114,6 +108,7 @@ impl CentrifugalPumpBlock {
     }
 }
 ```
+
 
 
 === Acoplamiento de Energía (Transporte Térmico)
