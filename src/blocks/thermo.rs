@@ -173,7 +173,15 @@ impl Block for Pipe1D {
             let rho_f = if i==0 { rho_c[0] } else if i==self.n_cells { rho_c[self.n_cells-1] } else { (rho_c[i-1]+rho_c[i])*0.5 };
             let w = x[i];
             if valve < 1e-3 { dx[i] = -w * 100.0; }
-            else { dx[i] = self.geom_inertia * (p_u - p_d + rho_f*g*dz - (self.fric_factor+k_v)*w*w.abs()/rho_f); }
+            else {
+                // Caras frontera (i=0, i=n) corresponden a media celda:
+                // menor inercia (tramo más corto), menor fricción (tramo más corto)
+                let half_cell = i == 0 || i == self.n_cells;
+                let inertia_f = if half_cell { 2.0 * self.geom_inertia } else { self.geom_inertia };
+                let fric_f    = if half_cell { 0.5 * self.fric_factor  } else { self.fric_factor  };
+                let dz_f      = if half_cell { 0.5 * dz                } else { dz                };
+                dx[i] = inertia_f * (p_u - p_d + rho_f*g*dz_f - (fric_f+k_v)*w*w.abs()/rho_f);
+            }
         }
 
         let q_c = q_ext / self.n_cells as f64;

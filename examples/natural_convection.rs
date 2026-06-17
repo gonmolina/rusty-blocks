@@ -11,12 +11,12 @@ fn main() {
     // --- BLOQUES ---
     
     // Headers de 2.0 m3
-    let h_bottom = system.add_block(Box::new(Header::new(2.0, thermo.clone())));
-    let h_top = system.add_block(Box::new(Header::new(2.0, thermo.clone())));
+    let h_bottom = system.add_block(Box::new(Header::new(2.0, thermo.clone(), vec![0], vec![0])));
+    let h_top = system.add_block(Box::new(Header::new(2.0, thermo.clone(), vec![0], vec![0])));
     
     // Tuberías de 5m
-    let pipe_up = system.add_block(Box::new(Pipe1D::new(5, 5.0, 0.05, -5.0, thermo.clone())));
-    let pipe_down = system.add_block(Box::new(Pipe1D::new(5, 5.0, 0.05, 5.0, thermo.clone())));
+    let pipe_up = system.add_block(Box::new(Pipe1D::new(5, 5.0, 0.05, -5.0, thermo.clone(), vec![], vec![])));
+    let pipe_down = system.add_block(Box::new(Pipe1D::new(5, 5.0, 0.05, 5.0, thermo.clone(), vec![], vec![])));
 
     // Señales de Control
     let valve_open = system.add_block(Box::new(Constant::new(vec![1.0])));

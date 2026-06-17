@@ -15,8 +15,8 @@ fn main() {
     let valve_pos = system.add_block(Box::new(Constant::new(vec![0.0])));
     let heater_q = system.add_block(Box::new(Constant::new(vec![0.0])));
 
-    let pipe = system.add_block(Box::new(Pipe1D::new(1, 10.0, 0.1, thermo.clone())));
-    let header = system.add_block(Box::new(Header::new(1.0, thermo.clone())));
+    let pipe = system.add_block(Box::new(Pipe1D::new(1, 10.0, 0.1, 0.0, thermo.clone(), vec![], vec![])));
+    let header = system.add_block(Box::new(Header::new(1.0, thermo.clone(), vec![0], vec![0])));
     let q_ext_h = system.add_block(Box::new(Constant::new(vec![0.0])));
 
     system.connect(p_src, 0, pipe, 0);

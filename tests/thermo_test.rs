@@ -18,21 +18,21 @@ fn test_pipe_flow_with_valve() {
     // Heater: 0W
     let heater_q = system.add_block(Box::new(Constant::new(vec![0.0])));
 
-    let pipe = system.add_block(Box::new(Pipe1D::new(1, 10.0, 0.1, thermo.clone())));
-    let header = system.add_block(Box::new(Header::new(1.0, thermo.clone())));
+    let pipe = system.add_block(Box::new(Pipe1D::new(1, 10.0, 0.1, 0.0, thermo.clone(), vec![], vec![])));
+    let header = system.add_block(Box::new(Header::new(1.0, thermo.clone(), vec![], vec![0])));
     let q_ext_h = system.add_block(Box::new(Constant::new(vec![0.0])));
 
     // Conexiones Pipe
     system.connect(p_src, 0, pipe, 0);
     system.connect(h_src, 0, pipe, 1);
-    system.connect(header, 0, pipe, 2);
-    system.connect(header, 1, pipe, 3);
+    system.connect(header, 1, pipe, 2);
+    system.connect(header, 2, pipe, 3);
     system.connect(valve_pos, 0, pipe, 4);
     system.connect(heater_q, 0, pipe, 5);
 
     // Conexiones Header
-    system.connect(pipe, 1, header, 0);
-    system.connect(pipe, 3, header, 1);
+    system.connect(pipe, 5, header, 0);
+    system.connect(pipe, 7, header, 1);
     system.connect(q_ext_h, 0, header, 2);
 
     let mut solver = EulerSolver::new(&system).unwrap();
@@ -51,18 +51,18 @@ fn test_pipe_flow_with_valve() {
     let h_src2 = system2.add_block(Box::new(Constant::new(vec![83700.0])));
     let valve_pos2 = system2.add_block(Box::new(Constant::new(vec![1.0])));
     let heater_q2 = system2.add_block(Box::new(Constant::new(vec![0.0])));
-    let pipe2 = system2.add_block(Box::new(Pipe1D::new(1, 10.0, 0.1, thermo.clone())));
-    let header2 = system2.add_block(Box::new(Header::new(1.0, thermo.clone())));
+    let pipe2 = system2.add_block(Box::new(Pipe1D::new(1, 10.0, 0.1, 0.0, thermo.clone(), vec![], vec![])));
+    let header2 = system2.add_block(Box::new(Header::new(1.0, thermo.clone(), vec![], vec![0])));
     let q_ext_h2 = system2.add_block(Box::new(Constant::new(vec![0.0])));
 
     system2.connect(p_src2, 0, pipe2, 0);
     system2.connect(h_src2, 0, pipe2, 1);
-    system2.connect(header2, 0, pipe2, 2);
-    system2.connect(header2, 1, pipe2, 3);
+    system2.connect(header2, 1, pipe2, 2);
+    system2.connect(header2, 2, pipe2, 3);
     system2.connect(valve_pos2, 0, pipe2, 4);
     system2.connect(heater_q2, 0, pipe2, 5);
-    system2.connect(pipe2, 1, header2, 0);
-    system2.connect(pipe2, 3, header2, 1);
+    system2.connect(pipe2, 5, header2, 0);
+    system2.connect(pipe2, 7, header2, 1);
     system2.connect(q_ext_h2, 0, header2, 2);
 
     let mut solver2 = EulerSolver::new(&system2).unwrap();
@@ -88,18 +88,18 @@ fn test_pipe_heater() {
     // Calefactor potente: 10 MW
     let heater_q = system.add_block(Box::new(Constant::new(vec![1e7])));
 
-    let pipe = system.add_block(Box::new(Pipe1D::new(1, 10.0, 0.1, thermo.clone())));
-    let header = system.add_block(Box::new(Header::new(1.0, thermo.clone())));
+    let pipe = system.add_block(Box::new(Pipe1D::new(1, 10.0, 0.1, 0.0, thermo.clone(), vec![], vec![])));
+    let header = system.add_block(Box::new(Header::new(1.0, thermo.clone(), vec![], vec![0])));
     let q_ext_h = system.add_block(Box::new(Constant::new(vec![0.0])));
 
     system.connect(p_src, 0, pipe, 0);
     system.connect(h_src, 0, pipe, 1);
-    system.connect(header, 0, pipe, 2);
-    system.connect(header, 1, pipe, 3);
+    system.connect(header, 1, pipe, 2);
+    system.connect(header, 2, pipe, 3);
     system.connect(valve_pos, 0, pipe, 4);
     system.connect(heater_q, 0, pipe, 5);
-    system.connect(pipe, 1, header, 0);
-    system.connect(pipe, 3, header, 1);
+    system.connect(pipe, 5, header, 0);
+    system.connect(pipe, 7, header, 1);
     system.connect(q_ext_h, 0, header, 2);
 
     let mut solver = EulerSolver::new(&system).unwrap();

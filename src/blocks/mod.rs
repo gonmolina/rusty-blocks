@@ -6,6 +6,7 @@ pub mod routing;
 pub mod sinks;
 pub mod sources;
 pub mod thermo;
+pub mod thermo_discrete;
 
 pub use continuous::Integrator;
 pub use discrete::{UnitDelay, DiscreteIntegrator, ZeroOrderHold, DiscreteFilter};
@@ -15,6 +16,7 @@ pub use routing::{Demux, Mux};
 pub use sinks::FileSink;
 pub use sources::{Constant, Step};
 pub use thermo::{Header, Pipe1D, CentrifugalPump, StratifiedTank, ClosedTank};
+pub use thermo_discrete::{DiscreteHeader, DiscretePipe1D, DiscreteCentrifugalPump};
 
 use std::collections::HashMap;
 use serde_json::Value;
@@ -67,6 +69,9 @@ impl BlockRegistry {
         r.register("CentrifugalPump", thermo::CentrifugalPump::build);
         r.register("StratifiedTank", thermo::StratifiedTank::build);
         r.register("ClosedTank", thermo::ClosedTank::build);
+        r.register("DiscreteHeader", thermo_discrete::DiscreteHeader::build);
+        r.register("DiscretePipe1D", thermo_discrete::DiscretePipe1D::build);
+        r.register("DiscreteCentrifugalPump", thermo_discrete::DiscreteCentrifugalPump::build);
         r
     }
 }
