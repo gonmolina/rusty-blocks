@@ -2,6 +2,7 @@ pub mod blocks;
 pub mod solver;
 pub mod system;
 pub mod thermo;
+pub mod thnet;
 
 use serde::{Deserialize, Serialize};
 

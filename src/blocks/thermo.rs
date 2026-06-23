@@ -305,8 +305,8 @@ impl Block for StratifiedTank {
             if i==self.n_layers-1 { dw += w_b; dwh += wh_b; }
             if i>0 { let wh = if w_t>0.0 { w_t*h_l[i-1] } else { w_t*h_l[i] }; dw += w_t; dwh += wh; }
             if i<self.n_layers-1 { let wh = if w_t>0.0 { w_t*h_l[i] } else { w_t*h_l[i+1] }; dw -= w_t; dwh -= wh; }
-            if i>0 { let q = (self.k_water*self.area/self.dx)*(t_l[i]-t_l[i-1]); dwh += q; if t_l[i-1]<t_l[i]-0.1 { dwh += 1000.0*self.area*(t_l[i]-t_l[i-1]); } }
-            if i<self.n_layers-1 { let q = (self.k_water*self.area/self.dx)*(t_l[i+1]-t_l[i]); dwh += q; if t_l[i]<t_l[i+1]-0.1 { dwh -= 1000.0*self.area*(t_l[i+1]-t_l[i]); } }
+            if i>0 { let q = (self.k_water*self.area/self.dx)*(t_l[i-1]-t_l[i]); dwh += q; if t_l[i-1]<t_l[i]-0.1 { dwh -= 1000.0*self.area*(t_l[i]-t_l[i-1]); } }
+            if i<self.n_layers-1 { let q = (self.k_water*self.area/self.dx)*(t_l[i+1]-t_l[i]); dwh += q; if t_l[i]<t_l[i+1]-0.1 { dwh += 1000.0*self.area*(t_l[i+1]-t_l[i]); } }
             dx[i] = dw; dx[self.n_layers+i] = dwh + q_e/self.n_layers as f64;
         }
     }
