@@ -1,0 +1,60 @@
+{
+  "nodes": [
+    {
+      "temperature": 293.15,
+      "pressure": 129367.0664,
+      "volume": 0.001
+    },
+    {
+      "temperature": 293.15,
+      "pressure": 100978.9022,
+      "volume": 0.001
+    }
+  ],
+  "pipes": [
+    {
+      "node_up": 0,
+      "node_dn": 1,
+      "diameter": 0.01,
+      "length": 5.0,
+      "roughness": 1.5e-5,
+      "elevation_dz": 0.0,
+      "n_cells": 10,
+      "t_init": 293.15
+    }
+  ],
+  "open_tanks": [
+    {
+      "node_id": 0,
+      "area": 0.2825,
+      "level": 3.0,
+      "level_min": 0.0,
+      "level_max": 4.0,
+      "z_bottom": 0.0,
+      "p_atm": 1.0e5
+    },
+    {
+      "node_id": 1,
+      "area": 0.2825,
+      "level": 0.1,
+      "level_min": 0.0,
+      "level_max": 4.0,
+      "z_bottom": 0.0,
+      "p_atm": 1.0e5
+    }
+  ],
+  "simulation": {
+    "dt": 0.2,
+    "t_final": 8000.0
+  },
+  "recorder": {
+    "file": "results/dos_tanques.csv",
+    "signals": [
+      "open_tank.0.level",
+      "open_tank.1.level",
+      "pipe.0.flow",
+      "node.0.pressure",
+      "node.1.pressure"
+    ]
+  }
+}

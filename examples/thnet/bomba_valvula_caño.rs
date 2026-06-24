@@ -15,10 +15,9 @@
 
 use bloques::thnet::{
     network::{Network, Node, Pipe},
+    output::{CsvRecorder, RecordSelector},
     solver::Solver,
 };
-use std::fs::File;
-use std::io::{BufWriter, Write};
 
 fn main() {
     // ─────────────────────────────────────────────────────────────────────
@@ -122,19 +121,44 @@ fn main() {
 
     let mut solver = Solver::new();
 
-    std::fs::create_dir_all("results").expect("No se pudo crear results/");
-    let file = File::create("results/pump_loop.csv").unwrap();
-    let mut w_csv = BufWriter::new(file);
+    // Pipe IDs asignados en orden de inserción:
+    //   pipe 0 = Bomba (nodo_in → nodo1)
+    //   pipe 1 = Válvula (nodo1 → nodo2)
+    //   pipe 2 = Tubería calentada (nodo2 → nodo_out)
+    let pipe_bomba  = 0_usize;
+    let pipe_valvula = 1_usize;
+    let pipe_cano    = 2_usize;
 
-    // Crear cabecera CSV dinámica para celdas del caño (Rama 2)
-    let mut header_str = "t_s,W_kg_s,P_node1_bar,P_node2_bar,T_node1_C,T_node2_C".to_string();
+    // ── Definir los selectores de variables a registrar ──────────────────
+    //
+    // Presiones nodales, caudales y temperatura de cada celda del caño
+    // (fluido + pared). Los selectores se construyen programáticamente para
+    // que el número de celdas sea arbitrario (n_cells).
+    let mut selectors: Vec<RecordSelector> = vec![
+        // Nodos de presión (bar → Pa, se convierte al leer el CSV)
+        RecordSelector::NodePressure(id_in),
+        RecordSelector::NodePressure(id_node1),
+        RecordSelector::NodePressure(id_node2),
+        RecordSelector::NodePressure(id_out),
+        // Temperaturas nodales
+        RecordSelector::NodeTemperature(id_in),
+        RecordSelector::NodeTemperature(id_out),
+        // Caudales de cada rama
+        RecordSelector::PipeFlow(pipe_bomba),
+        RecordSelector::PipeFlow(pipe_valvula),
+        RecordSelector::PipeFlow(pipe_cano),
+    ];
+    // Temperatura del fluido en cada celda de la tubería calentada
     for i in 0..n_cells {
-        header_str.push_str(&format!(",T_fluid_{}_C", i));
+        selectors.push(RecordSelector::PipeCellTemperature(pipe_cano, i));
     }
+    // Temperatura de la pared en cada celda
     for i in 0..n_cells {
-        header_str.push_str(&format!(",T_wall_{}_C", i));
+        selectors.push(RecordSelector::PipeWallTemperature(pipe_cano, i));
     }
-    writeln!(w_csv, "{}", header_str).unwrap();
+
+    let mut recorder = CsvRecorder::new("results/pump_loop.csv", selectors)
+        .expect("No se pudo crear results/pump_loop.csv");
 
     println!(
         "{:>6} {:>8} {:>10} {:>10} {:>9} {:>9} {:>9}",
@@ -148,24 +172,17 @@ fn main() {
         solver.step(&mut net, dt);
         let t = solver.time;
 
-        let w_flow = net.pipes[2].flow; // Caudal en la tubería principal
-        let p1 = net.nodes[id_node1].pressure / 1.0e5; // bar
-        let p2 = net.nodes[id_node2].pressure / 1.0e5; // bar
-        let t_inlet = net.nodes[id_node2].temperature - 273.15;
-        let t_outlet = net.nodes[id_out].temperature - 273.15;
-        let t_wall_mid = net.pipes[2].wall_temp[n_cells / 2] - 273.15;
+        // Registrar fila completa en el CSV
+        recorder.record(t, &net).expect("Error escribiendo CSV");
 
-        // Escribir fila CSV
-        let mut row_str = format!("{:.1},{:.6},{:.4},{:.4},{:.3},{:.3}", t, w_flow, p1, p2, t_inlet, t_outlet);
-        for i in 0..n_cells {
-            row_str.push_str(&format!(",{:.3}", net.pipes[2].cell_temp[i] - 273.15));
-        }
-        for i in 0..n_cells {
-            row_str.push_str(&format!(",{:.3}", net.pipes[2].wall_temp[i] - 273.15));
-        }
-        writeln!(w_csv, "{}", row_str).unwrap();
-
+        // Imprimir resumen en consola cada `print_every` pasos
         if step % print_every == 0 || step == n_steps - 1 {
+            let w_flow   = net.pipes[pipe_cano].flow;
+            let p1       = net.nodes[id_node1].pressure / 1.0e5;
+            let p2       = net.nodes[id_node2].pressure / 1.0e5;
+            let t_inlet  = net.nodes[id_node2].temperature - 273.15;
+            let t_outlet = net.nodes[id_out].temperature - 273.15;
+            let t_wall_mid = net.pipes[pipe_cano].wall_temp[n_cells / 2] - 273.15;
             println!(
                 "{:>6.0} {:>8.4} {:>10.3} {:>10.3} {:>9.2} {:>9.2} {:>9.2}",
                 t, w_flow, p1, p2, t_inlet, t_outlet, t_wall_mid
@@ -173,7 +190,7 @@ fn main() {
         }
     }
 
-    w_csv.flush().unwrap();
+    recorder.flush().expect("Error flusheando CSV");
     let elapsed = t_start.elapsed();
 
     // Resumen final de resultados

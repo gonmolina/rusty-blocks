@@ -319,6 +319,84 @@ En la red, el HX aparece como dos nodos (hot in/out, cold in/out) conectados
 por ramas con un Q_ext que se calcula a partir del estado termodinámico de
 los cuatro nodos adyacentes.
 
+### 4.9 Pipe — Inercia Térmica de Pared (Wall Model)
+
+En tuberías metálicas con masa significativa, la pared actúa como un
+acumulador térmico que suaviza los transitorios. El modelo agrega, por cada
+celda de la tubería, un nodo de temperatura de pared `T_wall_i` acoplado
+al fluido mediante un coeficiente global `UA_wall`.
+
+**Parámetros del modelo:**
+```
+M_wall      — masa total de la pared metálica [kg]
+cp_wall     — calor específico del metal [J/(kg·K)]  (acero ≈ 490, cobre ≈ 390)
+UA_wall     — coeficiente global pared–fluido [W/K]  (conductancia total)
+T_wall_i    — temperatura de la pared en la celda i [K]  (estado interno)
+```
+
+**Balance acoplado fluido–pared (por celda i):**
+
+```
+Fluido:  M_f · dh_i/dt  = W·(h_{i-1} - h_i) + UA_cell·(T_wall_i - T_f_i) + Q_ext_i
+Pared:   M_w · cp_w · dT_wall_i/dt = UA_cell·(T_f_i - T_wall_i) + Q_source_i
+
+donde:
+  M_f     = ρ_f · V_cell          (masa de fluido en la celda)
+  M_w     = M_wall / N            (masa de pared por celda)
+  UA_cell = UA_wall / N           (conductancia por celda)
+  Q_ext_i = Q_total / N           (calor externo distribuido uniformemente)
+```
+
+**Discretización semi-implícita (elimina T_wall_i analíticamente):**
+
+Partiendo del balance de pared discretizado con Euler implícito:
+
+```
+(M_w·cp_w / Δt) · (T_wall^{k+1} - T_wall^k) = UA_cell · (T_f^{k+1} - T_wall^{k+1}) + Q_source
+
+Despejando T_wall^{k+1}:
+  T_wall^{k+1} = (K_w · T_wall^k + Q_source + UA_cell · T_f^{k+1}) / (K_w + UA_cell)
+
+donde K_w = M_w·cp_w / Δt
+```
+
+Sustituyendo en el balance de fluido y escribiendo en el espacio de entalpía
+(con `c_eff = UA_cell·K_w / (K_w + UA_cell)` y `q_eff = UA_cell·Q_source / (K_w + UA_cell)`):
+
+```
+h_new = (h_cell + CFL·h_in + NTU_w·h_wall^k + q_eff·Δt/M_f) / (1 + CFL + NTU_w)
+
+donde:
+  CFL   = W·Δt / M_f             (número de Courant)
+  NTU_w = c_eff·Δt / (M_f·cp_f)  (número de unidades de transferencia efectivo)
+  h_wall^k = cp_f · (T_wall^k - T_ref)  (entalpía equivalente de la pared)
+```
+
+Este esquema es **incondicionalmente estable** para cualquier `CFL`, `NTU_w` y `Δt`:
+los coeficientes del numerador y denominador son siempre positivos, garantizando
+que `h_new` sea una media ponderada de las entalpías involucradas.
+
+**Actualización de la temperatura de pared al final de cada celda:**
+```
+T_wall_i^{k+1} = (K_w · T_wall_i^k + Q_source + UA_cell · T_f_i^{k+1}) / (K_w + UA_cell)
+```
+
+**Casos límite:**
+```
+UA_wall → 0:   pared adiabática, sin acoplamiento (NTU_w → 0, esquema puro advectivo)
+UA_wall → ∞:   pared en equilibrio térmico instantáneo con el fluido
+M_wall  → 0:   modelo sin pared (degrada al esquema upwind estándar)
+```
+
+**Guía de parametrización:**
+```
+Tubería de acero inoxidable DN50 × 1.5 mm, L = 10 m:
+  M_wall = π · D_ext · e · L · ρ_acero ≈ π · 0.054 · 0.0015 · 10 · 7900 ≈ 20 kg
+  cp_wall = 490 J/(kg·K)
+  UA_wall = h_conv · A_int  (h_conv ≈ 1000–5000 W/(m²·K) para agua turbulenta)
+           ≈ 3000 · π · 0.050 · 10 ≈ 4700 W/K
+```
+
 ---
 
 ## 5. Ejemplo: Sistema de Convección Natural

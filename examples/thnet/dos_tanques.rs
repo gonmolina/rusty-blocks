@@ -11,7 +11,7 @@
 /// Las presiones hidrostáticas en la base de los tanques actúan como condiciones de contorno variables.
 
 use bloques::thnet::{
-    network::{Network, Node, Pipe},
+    network::{Network, Node, Pipe, OpenTank},
     solver::Solver,
 };
 use std::fs::File;
@@ -29,8 +29,8 @@ fn main() {
     let roughness    = 1.5e-5_f64;     // [m] acero inoxidable 304L
 
     // Condiciones iniciales
-    let mut level_a  = 3.0_f64;        // [m] nivel inicial tanque A
-    let mut level_b  = 0.1_f64;        // [m] nivel inicial tanque B
+    let level_a_init = 3.0_f64;        // [m] nivel inicial tanque A
+    let level_b_init = 0.1_f64;        // [m] nivel inicial tanque B
     let t_init_k     = 20.0 + 273.15;  // [K] 20 °C temperatura constante
     let p_atm        = 1.0e5_f64;      // [Pa] 1 bar presión de gas (abierto)
     let g            = 9.80665_f64;    // [m/s²] gravedad
@@ -43,16 +43,16 @@ fn main() {
 
     // Densidad teórica del agua a 20 °C para la hidrostática inicial
     let rho_init     = 998.2_f64;      // [kg/m³]
-    let p_a_init     = p_atm + rho_init * g * level_a;
-    let p_b_init     = p_atm + rho_init * g * level_b;
+    let p_a_init     = p_atm + rho_init * g * level_a_init;
+    let p_b_init     = p_atm + rho_init * g * level_b_init;
 
     println!("┌─────────────────────────────────────────────────┐");
     println!("│   THNet — Dos Tanques Abiertos Interconectados   │");
     println!("├─────────────────────────────────────────────────┤");
     println!("│ Área Tanques:    {:>8.4} m²                    │", area_tank);
     println!("│ Altura Tanques:  {:>8.1} m                     │", height_tank);
-    println!("│ Nivel Inicial A: {:>8.2} m                     │", level_a);
-    println!("│ Nivel Inicial B: {:>8.2} m                     │", level_b);
+    println!("│ Nivel Inicial A: {:>8.2} m                     │", level_a_init);
+    println!("│ Nivel Inicial B: {:>8.2} m                     │", level_b_init);
     println!("│ Cañería:         L = {:.1} m, D = {:.1} mm       │", pipe_length, pipe_diam * 1000.0);
     println!("│ Paso de tiempo:  {:>8.2} s                     │", dt);
     println!("└─────────────────────────────────────────────────┘");
@@ -64,15 +64,37 @@ fn main() {
 
     let mut net = Network::new();
 
-    // Nodo 0: Base del Tanque A (Presión fija variable)
+    // Nodo 0: Base del Tanque A
     let id_a = net.add_node(
-        Node::new(t_init_k, p_a_init, 0.001).with_fixed_pressure(),
+        Node::new(t_init_k, p_a_init, 0.001),
     );
 
-    // Nodo 1: Base del Tanque B (Presión fija variable)
+    // Nodo 1: Base del Tanque B
     let id_b = net.add_node(
-        Node::new(t_init_k, p_b_init, 0.001).with_fixed_pressure(),
+        Node::new(t_init_k, p_b_init, 0.001),
     );
+
+    // Tanque A
+    let tank_a_id = net.add_open_tank(OpenTank::new(
+        id_a,
+        area_tank,
+        level_a_init,
+        0.0,
+        height_tank,
+        0.0,
+        p_atm,
+    ));
+
+    // Tanque B
+    let tank_b_id = net.add_open_tank(OpenTank::new(
+        id_b,
+        area_tank,
+        level_b_init,
+        0.0,
+        height_tank,
+        0.0,
+        p_atm,
+    ));
 
     // Cañería interconectora (Rama 0)
     net.add_pipe(
@@ -100,26 +122,17 @@ fn main() {
     let t_start = std::time::Instant::now();
 
     for step in 0..n_steps {
-        // 1. Actualizar las presiones de contorno en función del nivel hidrostático
-        let rho_a = net.nodes[id_a].density();
-        let rho_b = net.nodes[id_b].density();
-
-        let p_a = p_atm + rho_a * g * level_a;
-        let p_b = p_atm + rho_b * g * level_b;
-
-        net.nodes[id_a].pressure = p_a;
-        net.nodes[id_a].fixed_pressure = Some(p_a);
-
-        net.nodes[id_b].pressure = p_b;
-        net.nodes[id_b].fixed_pressure = Some(p_b);
-
-        // 2. Dar paso de simulación
+        // 1. Dar paso de simulación (la presión y niveles se actualizan internamente)
         solver.step(&mut net, dt);
         let t = solver.time;
 
         let flow = net.pipes[0].flow;
+        let level_a = net.open_tanks[tank_a_id].level;
+        let level_b = net.open_tanks[tank_b_id].level;
+        let p_a = net.nodes[id_a].pressure;
+        let p_b = net.nodes[id_b].pressure;
 
-        // 3. Escribir en CSV
+        // 2. Escribir en CSV
         writeln!(
             w_csv,
             "{:.2},{:.6},{:.6},{:.6},{:.4},{:.4}",
@@ -127,33 +140,28 @@ fn main() {
         )
         .unwrap();
 
-        // 4. Imprimir en pantalla periódicamente
+        // 3. Imprimir en pantalla periódicamente
         if step % print_every == 0 || step == n_steps - 1 {
             println!(
                 "{:>6.1} {:>10.4} {:>10.4} {:>10.4} {:>10.4} {:>10.4}",
                 t, level_a, level_b, flow, p_a / 1.0e5, p_b / 1.0e5
             );
         }
-
-        // 5. Integrar niveles de los tanques para el siguiente paso
-        level_a -= dt * flow / (rho_a * area_tank);
-        level_b += dt * flow / (rho_b * area_tank);
-
-        // Clampear niveles a límites físicos
-        level_a = level_a.clamp(0.0, height_tank);
-        level_b = level_b.clamp(0.0, height_tank);
     }
 
     w_csv.flush().unwrap();
     let elapsed = t_start.elapsed();
 
+    let level_a_fin = net.open_tanks[tank_a_id].level;
+    let level_b_fin = net.open_tanks[tank_b_id].level;
+
     println!("{}", "─".repeat(60));
     println!();
     println!("Simulación completada en {:.2?}", elapsed);
     println!("Estado final:");
-    println!("  Nivel A: {:.4} m", level_a);
-    println!("  Nivel B: {:.4} m", level_b);
-    println!("  Diferencia: {:.4} m", (level_a - level_b).abs());
+    println!("  Nivel A: {:.4} m", level_a_fin);
+    println!("  Nivel B: {:.4} m", level_b_fin);
+    println!("  Diferencia: {:.4} m", (level_a_fin - level_b_fin).abs());
     println!("  Caudal final: {:.4} kg/s", net.pipes[0].flow);
     println!();
     println!("Resultados guardados en results/dos_tanques.csv");

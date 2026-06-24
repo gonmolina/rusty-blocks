@@ -1,0 +1,81 @@
+{
+  "nodes": [
+    {
+      "temperature": 303.15,
+      "pressure": 2.0e5,
+      "volume": 0.001,
+      "fixed_pressure": true
+    },
+    {
+      "temperature": 303.15,
+      "pressure": 317172.935,
+      "volume": 0.001
+    }
+  ],
+  "pipes": [
+    {
+      "node_up": 0,
+      "node_dn": 1,
+      "diameter": 0.25,
+      "length": 12.0,
+      "roughness": 1.5e-5,
+      "elevation_dz": 12.0,
+      "n_cells": 10,
+      "t_init": 303.15,
+      "heat_total": 18000.0,
+      "wall": {
+        "mass_kg": 152.0,
+        "cp_j_kg_k": 500.0,
+        "ua_w_k": 3500.0
+      }
+    },
+    {
+      "node_up": 1,
+      "node_dn": 0,
+      "diameter": 0.25,
+      "length": 12.0,
+      "roughness": 1.5e-5,
+      "elevation_dz": -12.0,
+      "n_cells": 10,
+      "t_init": 303.15,
+      "heat_total": -18000.0,
+      "wall": {
+        "mass_kg": 152.0,
+        "cp_j_kg_k": 500.0,
+        "ua_w_k": 3500.0
+      }
+    }
+  ],
+  "simulation": {
+    "dt": 0.2,
+    "t_final": 20000.0
+  },
+  "recorder": {
+    "file": "results/conv_natural_thnet.csv",
+    "signals": [
+      "pipe.0.flow",
+      "node.0.temperature",
+      "node.1.temperature",
+      "pipe.0.cell_temp.0",
+      "pipe.0.cell_temp.1",
+      "pipe.0.cell_temp.2",
+      "pipe.0.cell_temp.3",
+      "pipe.0.cell_temp.4",
+      "pipe.0.cell_temp.5",
+      "pipe.0.cell_temp.6",
+      "pipe.0.cell_temp.7",
+      "pipe.0.cell_temp.8",
+      "pipe.0.cell_temp.9",
+      "pipe.1.cell_temp.0",
+      "pipe.1.cell_temp.1",
+      "pipe.1.cell_temp.2",
+      "pipe.1.cell_temp.3",
+      "pipe.1.cell_temp.4",
+      "pipe.1.cell_temp.5",
+      "pipe.1.cell_temp.6",
+      "pipe.1.cell_temp.7",
+      "pipe.1.cell_temp.8",
+      "pipe.1.cell_temp.9"
+    ]
+  }
+}

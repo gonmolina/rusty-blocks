@@ -27,3 +27,7 @@ path = "examples/thnet/dos_tanques.rs"
 [[example]]
 name = "tanque_estratificado"
 path = "examples/thnet/tanque_estratificado.rs"
+
+[[example]]
+name = "conv_natural_builder"
+path = "examples/thnet/conv_natural_builder.rs"

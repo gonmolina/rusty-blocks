@@ -1,0 +1,114 @@
+{
+  "nodes": [
+    {
+      "temperature": 320.65,
+      "pressure": 1.0e5,
+      "volume": 0.001,
+      "fixed_pressure": true
+    },
+    {
+      "temperature": 320.65,
+      "pressure": 3.2e5,
+      "volume": 0.001
+    },
+    {
+      "temperature": 320.65,
+      "pressure": 1.1e5,
+      "volume": 0.001
+    },
+    {
+      "temperature": 320.65,
+      "pressure": 1.0e5,
+      "volume": 0.001,
+      "fixed_pressure": true
+    }
+  ],
+  "pipes": [
+    {
+      "node_up": 0,
+      "node_dn": 1,
+      "diameter": 0.25,
+      "length": 0.5,
+      "roughness": 1.5e-5,
+      "elevation_dz": 0.0,
+      "n_cells": 1,
+      "t_init": 320.65,
+      "component": {
+        "type": "pump",
+        "dp_max": 220000.0,
+        "w_max": 10.0,
+        "speed_ratio": 1.0
+      }
+    },
+    {
+      "node_up": 1,
+      "node_dn": 2,
+      "diameter": 0.25,
+      "length": 0.5,
+      "roughness": 1.5e-5,
+      "elevation_dz": 0.0,
+      "n_cells": 1,
+      "t_init": 320.65,
+      "component": {
+        "type": "valve",
+        "cv": 5.0,
+        "opening": 1.0,
+        "characteristic": "linear"
+      }
+    },
+    {
+      "node_up": 2,
+      "node_dn": 3,
+      "diameter": 0.25,
+      "length": 26.0,
+      "roughness": 1.5e-5,
+      "elevation_dz": 0.0,
+      "n_cells": 10,
+      "t_init": 320.65,
+      "heat_total": 10000.0,
+      "wall": {
+        "mass_kg": 164.0,
+        "cp_j_kg_k": 500.0,
+        "ua_w_k": 1500.0
+      }
+    }
+  ],
+  "simulation": {
+    "dt": 0.2,
+    "t_final": 1800.0
+  },
+  "recorder": {
+    "file": "results/pump_loop.csv",
+    "signals": [
+      "node.0.pressure",
+      "node.1.pressure",
+      "node.2.pressure",
+      "node.3.pressure",
+      "node.0.temperature",
+      "node.3.temperature",
+      "pipe.0.flow",
+      "pipe.1.flow",
+      "pipe.2.flow",
+      "pipe.2.cell_temp.0",
+      "pipe.2.cell_temp.1",
+      "pipe.2.cell_temp.2",
+      "pipe.2.cell_temp.3",
+      "pipe.2.cell_temp.4",
+      "pipe.2.cell_temp.5",
+      "pipe.2.cell_temp.6",
+      "pipe.2.cell_temp.7",
+      "pipe.2.cell_temp.8",
+      "pipe.2.cell_temp.9",
+      "pipe.2.wall_temp.0",
+      "pipe.2.wall_temp.1",
+      "pipe.2.wall_temp.2",
+      "pipe.2.wall_temp.3",
+      "pipe.2.wall_temp.4",
+      "pipe.2.wall_temp.5",
+      "pipe.2.wall_temp.6",
+      "pipe.2.wall_temp.7",
+      "pipe.2.wall_temp.8",
+      "pipe.2.wall_temp.9"
+    ]
+  }
+}

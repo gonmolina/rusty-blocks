@@ -70,6 +70,46 @@ pub fn temperature_from_enthalpy(h: f64) -> f64 {
     (t_c + T_REF_K).clamp(T_REF_K - 5.0, T_REF_K + 130.0)
 }
 
+/// Biblioteca termodinámica: provee propiedades del fluido.
+pub trait ThermoLib: Send + Sync {
+    /// Densidad [kg/m³] en función de la temperatura [K]
+    fn density(&self, t_k: f64) -> f64;
+    /// Viscosidad dinámica [Pa·s] en función de la temperatura [K]
+    fn viscosity(&self, t_k: f64) -> f64;
+    /// Entalpía específica [J/kg] en función de la temperatura [K]
+    fn enthalpy(&self, t_k: f64) -> f64;
+    /// Calor específico a presión constante [J/(kg·K)] en función de la temperatura [K]
+    fn cp(&self, t_k: f64) -> f64;
+    /// Temperatura [K] en función de la entalpía específica [J/kg]
+    fn temperature_from_enthalpy(&self, h: f64) -> f64;
+}
+
+/// Implementación por defecto usando los ajustes NIST para agua líquida monofásica.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NistWaterThermo;
+
+impl ThermoLib for NistWaterThermo {
+    fn density(&self, t_k: f64) -> f64 {
+        density(t_k)
+    }
+
+    fn viscosity(&self, t_k: f64) -> f64 {
+        viscosity(t_k)
+    }
+
+    fn enthalpy(&self, t_k: f64) -> f64 {
+        enthalpy(t_k)
+    }
+
+    fn cp(&self, t_k: f64) -> f64 {
+        cp(t_k)
+    }
+
+    fn temperature_from_enthalpy(&self, h: f64) -> f64 {
+        temperature_from_enthalpy(h)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

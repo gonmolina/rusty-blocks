@@ -473,3 +473,314 @@ de SPICE, garantizando las mismas propiedades de convergencia.
 | Estabilidad | Condicional (α, τ_exp) | Incondicional (hidráulica) |
 | Precisión | Distorsión por α artificial | Alta fidelidad |
 | Redes complejas | Difícil (headers por nodo) | Natural (grafo arbitrario) |
+
+---
+
+## 9. Definición de Redes desde JSON
+
+### 9.1 Requerimiento
+
+El módulo `thnet` debe permitir construir una red completa (`Network`) a partir
+de un archivo JSON. Esto habilita:
+
+- Separar la **definición de la red** del **código de simulación**.
+- Reutilizar el mismo ejecutable con distintas configuraciones de planta.
+- Integrar con interfaces gráficas o herramientas externas que generen JSON.
+- Facilitar la validación de modelos contra datos experimentales sin recompilar.
+
+El loader debe implementarse en un módulo `loader.rs` (o `builder.rs`) dentro
+de `src/thnet/`, exponiendo al menos:
+
+```rust
+pub fn load_network(json: &str) -> Result<Network, String>;
+```
+
+### 9.2 Estructura General del JSON
+
+```json
+{
+  "nodes": [ ... ],
+  "pipes": [ ... ],
+  "open_tanks": [ ... ],
+  "closed_tanks": [ ... ],
+  "stratified_tanks": [ ... ],
+  "heat_exchangers": [ ... ],
+  "simulation": { ... }
+}
+```
+
+Los nodos y pipes se referencian por su **índice** (posición en el array),
+que corresponde al `NodeId` / `PipeId` (`usize`) del modelo interno.
+
+### 9.3 Esquema por Componente
+
+#### 9.3.1 Node ✅ Implementado
+
+| Campo | Tipo | Unidad | Requerido | Descripción |
+|---|---|---|---|---|
+| `temperature` | `f64` | K | ✅ | Temperatura inicial |
+| `pressure` | `f64` | Pa | ✅ | Presión inicial |
+| `volume` | `f64` | m³ | ✅ | Volumen del nodo (header) |
+| `fixed_pressure` | `bool` | — | ❌ | Si `true`, nodo Dirichlet de presión |
+| `fixed_temperature` | `f64 \| null` | K | ❌ | Si presente, Dirichlet térmico |
+| `external_heat` | `f64` | W | ❌ | Calor externo inyectado. Default: 0 |
+
+```json
+{
+  "temperature": 293.15,
+  "pressure": 1e5,
+  "volume": 0.001,
+  "fixed_pressure": true
+}
+```
+
+#### 9.3.2 Pipe ✅ Implementado
+
+Una pipe puede ser una tubería simple, una bomba, una válvula o un check valve,
+determinado por el campo `component`.
+
+| Campo | Tipo | Unidad | Requerido | Descripción |
+|---|---|---|---|---|
+| `node_up` | `usize` | — | ✅ | Índice del nodo upstream |
+| `node_dn` | `usize` | — | ✅ | Índice del nodo downstream |
+| `diameter` | `f64` | m | ✅ | Diámetro interno |
+| `length` | `f64` | m | ✅ | Longitud de la tubería |
+| `roughness` | `f64` | m | ✅ | Rugosidad absoluta (e.g. 1.5e-5) |
+| `elevation_dz` | `f64` | m | ❌ | z_dn − z_up. Default: 0 |
+| `n_cells` | `usize` | — | ❌ | Celdas térmicas. Default: 1 |
+| `t_init` | `f64` | K | ❌ | Temperatura inicial. Default: 293.15 |
+| `component` | `object` | — | ❌ | Componente especial (ver abajo). Default: pipe simple |
+
+**Componente `"pipe"` (default):**
+
+Opciones adicionales dentro de `component`:
+
+```json
+{ "type": "pipe" }
+```
+
+**Componente `"pump"`:**
+
+| Campo | Tipo | Unidad | Descripción |
+|---|---|---|---|
+| `type` | `"pump"` | — | — |
+| `dp_max` | `f64` | Pa | ΔP a caudal cero (alternativa a `coefs`) |
+| `w_max` | `f64` | kg/s | Caudal a ΔP cero (alternativa a `coefs`) |
+| `coefs` | `[f64; 3]` | Pa | Coeficientes [a₀, a₁, a₂] de dP = a₀ + a₁W + a₂W² |
+| `speed_ratio` | `f64` | — | ω/ω_nom. Default: 1.0 |
+
+```json
+{
+  "type": "pump",
+  "coefs": [300000, 0, -1200],
+  "speed_ratio": 1.0
+}
+```
+
+**Componente `"valve"`:**
+
+| Campo | Tipo | Unidad | Descripción |
+|---|---|---|---|
+| `type` | `"valve"` | — | — |
+| `cv` | `f64` | — | Coeficiente Cv (usar `cv` o `kv`, no ambos) |
+| `kv` | `f64` | — | Coeficiente Kv europeo (se convierte internamente) |
+| `opening` | `f64` | 0–1 | Apertura inicial |
+| `characteristic` | `string` | — | `"linear"`, `"equal_pct"` o `"quick_opening"`. Default: `"linear"` |
+
+```json
+{
+  "type": "valve",
+  "cv": 30.0,
+  "opening": 0.5,
+  "characteristic": "equal_pct"
+}
+```
+
+**Componente `"check_valve"`:**
+
+```json
+{ "type": "check_valve" }
+```
+
+**Opciones térmicas de la rama** (aplican a `pipe` y `check_valve`):
+
+| Campo | Tipo | Unidad | Descripción |
+|---|---|---|---|
+| `heat_total` | `f64` | W | Fuente de calor distribuida. Default: 0 |
+| `wall` | `object` | — | Inercia térmica de pared (ver abajo) |
+| `hx_shell` | `object` | — | Intercambiador shell-side (ver abajo) |
+
+```json
+"wall": { "mass_kg": 164.0, "cp_j_kg_k": 500.0, "ua_w_k": 1500.0 }
+```
+
+```json
+"hx_shell": { "ua_w_k": 5000.0, "t_coolant_k": 293.15 }
+```
+
+#### 9.3.3 OpenTank ✅ Implementado
+
+| Campo | Tipo | Unidad | Requerido | Descripción |
+|---|---|---|---|---|
+| `node_id` | `usize` | — | ✅ | Índice del nodo asociado al fondo |
+| `area` | `f64` | m² | ✅ | Sección transversal del tanque |
+| `level` | `f64` | m | ✅ | Nivel de líquido inicial |
+| `level_min` | `f64` | m | ✅ | Nivel mínimo |
+| `level_max` | `f64` | m | ✅ | Nivel máximo |
+| `z_bottom` | `f64` | m | ❌ | Cota del fondo. Default: 0 |
+| `p_atm` | `f64` | Pa | ❌ | Presión del gas. Default: 1e5 |
+
+```json
+{
+  "node_id": 0,
+  "area": 10.0,
+  "level": 5.0,
+  "level_min": 0.0,
+  "level_max": 10.0
+}
+```
+
+#### 9.3.4 ClosedTank ✅ Implementado
+
+| Campo | Tipo | Unidad | Requerido | Descripción |
+|---|---|---|---|---|
+| `node_id` | `usize` | — | ✅ | Índice del nodo asociado al fondo |
+| `area` | `f64` | m² | ✅ | Sección transversal |
+| `level` | `f64` | m | ✅ | Nivel de líquido inicial |
+| `level_min` | `f64` | m | ✅ | Nivel mínimo |
+| `level_max` | `f64` | m | ✅ | Nivel máximo |
+| `z_bottom` | `f64` | m | ❌ | Cota del fondo. Default: 0 |
+| `v_total` | `f64` | m³ | ✅ | Volumen total del tanque |
+| `p_gas_init` | `f64` | Pa | ✅ | Presión inicial del gas |
+| `gamma` | `f64` | — | ❌ | Exponente adiabático. Default: 1.4 |
+| `compressibility_beta` | `f64 \| null` | 1/Pa | ❌ | Si presente, usa modelo de compresibilidad en vez de gas cushion |
+
+```json
+{
+  "node_id": 2,
+  "area": 0.5,
+  "level": 1.0,
+  "level_min": 0.0,
+  "level_max": 4.0,
+  "v_total": 2.0,
+  "p_gas_init": 1e5,
+  "gamma": 1.4
+}
+```
+
+#### 9.3.5 StratifiedTank ✅ Implementado
+
+| Campo | Tipo | Unidad | Requerido | Descripción |
+|---|---|---|---|---|
+| `node_id` | `usize` | — | ✅ | Índice del nodo asociado al fondo |
+| `area` | `f64` | m² | ✅ | Sección transversal |
+| `level` | `f64` | m | ✅ | Nivel de líquido inicial |
+| `level_min` | `f64` | m | ❌ | Nivel mínimo. Default: 0 |
+| `level_max` | `f64` | m | ✅ | Altura máxima del tanque |
+| `z_bottom` | `f64` | m | ❌ | Cota del fondo. Default: 0 |
+| `p_atm` | `f64` | Pa | ❌ | Presión del gas. Default: 1e5 |
+| `n_layers` | `usize` | — | ✅ | Número de capas térmicas |
+| `t_init` | `f64` | K | ✅ | Temperatura inicial uniforme |
+| `heater_height` | `f64` | m | ❌ | Altura del calefactor. Default: 0 |
+| `heater_power` | `f64` | W | ❌ | Potencia del calefactor. Default: 0 |
+| `inlet_height` | `f64` | m | ❌ | Altura del nozzle de entrada. Default: 0 |
+| `inlet_flow` | `f64` | kg/s | ❌ | Caudal de inyección inicial. Default: 0 |
+| `inlet_temp` | `f64` | K | ❌ | Temperatura de inyección. Default: t_init |
+
+```json
+{
+  "node_id": 1,
+  "area": 4.9,
+  "level": 19.0,
+  "level_max": 20.0,
+  "n_layers": 20,
+  "t_init": 293.15,
+  "heater_height": 2.0,
+  "heater_power": 10000.0,
+  "inlet_height": 18.0,
+  "inlet_flow": 10.0
+}
+```
+
+#### 9.3.6 HeatExchanger ✅ Implementado
+
+| Campo | Tipo | Unidad | Requerido | Descripción |
+|---|---|---|---|---|
+| `pipe_hot` | `usize` | — | ✅ | Índice de la pipe del lado caliente |
+| `pipe_cold` | `usize` | — | ✅ | Índice de la pipe del lado frío |
+| `ua` | `f64` | W/K | ✅ | Coeficiente UA global |
+
+```json
+{
+  "pipe_hot": 0,
+  "pipe_cold": 1,
+  "ua": 4180.0
+}
+```
+
+#### 9.3.7 Simulation (Parámetros del Solvedor)
+
+| Campo | Tipo | Unidad | Requerido | Descripción |
+|---|---|---|---|---|
+| `dt` | `f64` | s | ✅ | Paso de tiempo |
+| `t_final` | `f64` | s | ✅ | Tiempo final de simulación |
+| `max_newton_iter` | `usize` | — | ❌ | Iteraciones Newton. Default: 50 |
+| `tol_flow` | `f64` | kg/s | ❌ | Tolerancia de convergencia. Default: 1e-9 |
+| `output_interval` | `f64` | s | ❌ | Intervalo de escritura CSV. Default: dt |
+
+### 9.4 Componentes por Implementar
+
+#### 9.4.x PRV (Pressure Relief Valve) ❌ No implementada
+
+| Campo | Tipo | Unidad | Descripción |
+|---|---|---|---|
+| `type` | `"prv"` | — | — |
+| `set_pressure` | `f64` | Pa | Presión de apertura |
+| `blowdown` | `f64` | Pa | Banda de histéresis (cierra a set − blowdown) |
+| `cv_full` | `f64` | — | Cv a apertura máxima |
+
+#### 9.4.x CsvRecorder ❌ No implementado
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `file` | `string` | Ruta del archivo CSV de salida |
+| `signals` | `array` | Lista de señales a registrar (e.g. `"node.0.pressure"`, `"pipe.1.flow"`) |
+| `interval` | `f64` | Intervalo de escritura [s] |
+
+### 9.5 Ejemplo Completo
+
+```json
+{
+  "nodes": [
+    { "temperature": 293.15, "pressure": 1e5, "volume": 0.001, "fixed_pressure": true },
+    { "temperature": 293.15, "pressure": 1e5, "volume": 0.001 },
+    { "temperature": 293.15, "pressure": 1e5, "volume": 0.001, "fixed_pressure": true }
+  ],
+  "pipes": [
+    {
+      "node_up": 1, "node_dn": 0,
+      "diameter": 0.25, "length": 5.0, "roughness": 1.5e-5,
+      "n_cells": 1, "t_init": 293.15
+    },
+    {
+      "node_up": 1, "node_dn": 2,
+      "diameter": 0.25, "length": 5.0, "roughness": 1.5e-5,
+      "component": { "type": "valve", "cv": 30.55, "opening": 0.0 }
+    }
+  ],
+  "stratified_tanks": [
+    {
+      "node_id": 1,
+      "area": 4.9, "level": 19.0, "level_max": 20.0,
+      "n_layers": 20, "t_init": 293.15,
+      "heater_height": 2.0, "heater_power": 10000.0,
+      "inlet_height": 18.0, "inlet_flow": 10.0
+    }
+  ],
+  "simulation": {
+    "dt": 0.2,
+    "t_final": 2000.0
+  }
+}
+```
+

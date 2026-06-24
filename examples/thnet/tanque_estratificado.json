@@ -1,0 +1,86 @@
+{
+  "nodes": [
+    {
+      "temperature": 293.15,
+      "pressure": 1.0e5,
+      "volume": 0.001,
+      "fixed_pressure": true
+    },
+    {
+      "temperature": 293.15,
+      "pressure": 1.0e5,
+      "volume": 0.001
+    },
+    {
+      "temperature": 293.15,
+      "pressure": 1.0e5,
+      "volume": 0.001,
+      "fixed_pressure": true
+    }
+  ],
+  "pipes": [
+    {
+      "node_up": 1,
+      "node_dn": 0,
+      "diameter": 0.25,
+      "length": 5.0,
+      "roughness": 1.5e-5,
+      "n_cells": 1,
+      "t_init": 293.15
+    },
+    {
+      "node_up": 1,
+      "node_dn": 2,
+      "diameter": 0.25,
+      "length": 5.0,
+      "roughness": 1.5e-5,
+      "n_cells": 1,
+      "t_init": 293.15,
+      "component": {
+        "type": "valve",
+        "cv": 30.5458,
+        "opening": 0.0,
+        "characteristic": "linear"
+      }
+    }
+  ],
+  "stratified_tanks": [
+    {
+      "node_id": 1,
+      "area": 4.9,
+      "level": 19.0,
+      "level_min": 0.0,
+      "level_max": 20.0,
+      "z_bottom": 0.0,
+      "p_atm": 1.0e5,
+      "n_layers": 20,
+      "t_init": 293.15,
+      "heater_height": 2.0,
+      "heater_power": 10000.0,
+      "inlet_height": 18.0,
+      "inlet_flow": 10.0,
+      "inlet_temp": 293.15
+    }
+  ],
+  "simulation": {
+    "dt": 0.2,
+    "t_final": 2000.0
+  },
+  "recorder": {
+    "file": "results/tanque_estratificado.csv",
+    "signals": [
+      "stratified_tank.0.level",
+      "pipe.0.flow",
+      "pipe.1.flow",
+      "stratified_tank.0.layer_temp.0",
+      "stratified_tank.0.layer_temp.1",
+      "stratified_tank.0.layer_temp.2",
+      "stratified_tank.0.layer_temp.5",
+      "stratified_tank.0.layer_temp.8",
+      "stratified_tank.0.layer_temp.11",
+      "stratified_tank.0.layer_temp.14",
+      "stratified_tank.0.layer_temp.17",
+      "stratified_tank.0.layer_temp.19"
+    ]
+  }
+}
