@@ -14,9 +14,19 @@ impl Integrator {
 
     pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
         #[derive(Deserialize)]
-        struct Params { ic: Vec<f64> }
+        #[serde(untagged)]
+        enum IcInput {
+            Scalar(f64),
+            Vector(Vec<f64>),
+        }
+        #[derive(Deserialize)]
+        struct Params { ic: IcInput }
         let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
-        Ok(Box::new(Self::new(p.ic)))
+        let ic_vec = match p.ic {
+            IcInput::Scalar(s) => vec![s],
+            IcInput::Vector(v) => v,
+        };
+        Ok(Box::new(Self::new(ic_vec)))
     }
 }
 

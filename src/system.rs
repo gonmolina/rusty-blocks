@@ -303,7 +303,7 @@ impl Block for Subsystem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blocks::{Gain, Integrator, Constant};
+    use crate::blocks::{Gain, Integrator};
     #[test]
     fn test_execution_order_simple_chain() {
         let mut system = System::new();

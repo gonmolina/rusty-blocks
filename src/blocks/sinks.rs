@@ -35,6 +35,9 @@ impl FileSink {
     fn ensure_file_is_open(&self) {
         if self.writer.borrow().is_none() {
             let path = std::path::Path::new("sim_results").join(&self.filename);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
             let file = File::create(&path).expect("Could not create sink file");
             let mut writer = BufWriter::new(file);
             write!(writer, "t").unwrap();

@@ -2,6 +2,8 @@ use super::{Block, BlockRegistry};
 use serde::Deserialize;
 use serde_json::Value;
 
+fn default_width() -> usize { 1 }
+
 /// A simple Constant Gain block.
 pub struct Gain {
     k: f64,
@@ -15,7 +17,11 @@ impl Gain {
 
     pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
         #[derive(Deserialize)]
-        struct Params { k: f64, width: usize }
+        struct Params {
+            k: f64,
+            #[serde(default = "default_width")]
+            width: usize,
+        }
         let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
         Ok(Box::new(Self::new(p.k, p.width)))
     }
@@ -53,7 +59,11 @@ impl Sum {
 
     pub fn build(v: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
         #[derive(Deserialize)]
-        struct Params { signs: String, width: usize }
+        struct Params {
+            signs: String,
+            #[serde(default = "default_width")]
+            width: usize,
+        }
         let p: Params = serde_json::from_value(v).map_err(|e| e.to_string())?;
         Ok(Box::new(Self::new(&p.signs, p.width)))
     }

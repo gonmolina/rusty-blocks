@@ -2,28 +2,9 @@
 name = "bloques"
 version = "0.1.0"
 edition = "2024"
+description = "Motor de Simulación de Diagramas de Bloques"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-axum = "0.7"
-tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors"] }
-tower = "0.4"
 csv = "1.4.0"
-
-[[example]]
-name = "conv_natural_thnet"
-path = "examples/thnet/conv_natural_thnet.rs"
-
-[[example]]
-name = "bomba_valvula_cano"
-path = "examples/thnet/bomba_valvula_caño.rs"
-
-[[example]]
-name = "dos_tanques"
-path = "examples/thnet/dos_tanques.rs"
-
-[[example]]
-name = "tanque_estratificado"
-path = "examples/thnet/tanque_estratificado.rs"

@@ -1,8 +1,13 @@
 pub mod blocks;
 pub mod solver;
 pub mod system;
-pub mod thermo;
-pub mod thnet;
+
+pub use blocks::{
+    SensorBlock, SensorFault, SensorQuality,
+    ActuatorBlock, ActuatorFault, FailMode,
+    PointKineticsBlock, PointKineticsParams, interpolate_burnup_reactivity_pcm,
+    FuelThermalBlock, FuelThermalParams, interpolate_cpm, doppler_weights,
+};
 
 use serde::{Deserialize, Serialize};
 
