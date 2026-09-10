@@ -257,7 +257,12 @@ impl Block for FuelThermalBlock {
         // 6: HTC_avg [W/K]
         // 7: Velocidad de refrigerante [m/s]
         // 8: T_coolant_avg [°C]
-        9
+        // 9: Q_heat_to_coolant_total [W]
+        // 10: Q_heat_to_coolant_total [MW]
+        // 11: Q_heat_zone_1 [W]
+        // 12: Q_heat_zone_2 [W]
+        // 13: Q_heat_zone_3 [W]
+        14
     }
 
     fn input_width(&self, _port: usize) -> usize {
@@ -424,6 +429,39 @@ impl Block for FuelThermalBlock {
         };
         let tc_avg = 0.5 * (t_in_c + t_out_c);
 
+        // Distribución nodal de temperatura de refrigerante para balance de calor
+        let mut tc = vec![t_in_c; n];
+        if u.len() > 3 && !u[3].is_nan() {
+            let t_out = if u[3] > 200.0 { u[3] - 273.15 } else { u[3] };
+            let delta_t = (t_out - t_in_c).max(0.0);
+            let mut accum = 0.0;
+            for i in 0..n {
+                let f = self.params.apd_fractions[i];
+                accum += f;
+                tc[i] = t_in_c + accum * delta_t;
+            }
+        } else {
+            let p_in = if u.is_empty() { self.params.nominal_power_w } else { u[0] };
+            let power_w = if p_in < 500.0 { p_in * 1e6 } else if p_in < 500_000.0 { p_in * 1e3 } else { p_in };
+            let w_eff = flow_kg_s.abs().max(0.1);
+            let mut tc_prev = t_in_c;
+            for i in 0..n {
+                let qi = self.params.apd_fractions[i] * power_w;
+                let cpc = coolant_cp(tc_prev);
+                let tc_exit = tc_prev + qi / (w_eff * cpc);
+                tc[i] = tc_exit;
+                tc_prev = tc_exit;
+            }
+        }
+
+        let mut q_conv_total = 0.0;
+        let mut q_conv = vec![0.0; n];
+        for i in 0..n {
+            let qi = (htc[i] * (tf[i] - tc[i])).max(0.0);
+            q_conv[i] = qi;
+            q_conv_total += qi;
+        }
+
         if !y.is_empty() { y[0] = tf_doppler; }
         if y.len() > 1 { y[1] = tf_max; }
         if y.len() > 2 { y[2] = tf_avg; }
@@ -433,5 +471,10 @@ impl Block for FuelThermalBlock {
         if y.len() > 6 { y[6] = htc_avg; }
         if y.len() > 7 { y[7] = vel; }
         if y.len() > 8 { y[8] = tc_avg; }
+        if y.len() > 9 { y[9] = q_conv_total; }
+        if y.len() > 10 { y[10] = q_conv_total / 1e6; }
+        if y.len() > 11 { y[11] = q_conv[0]; }
+        if y.len() > 12 { y[12] = q_conv[1]; }
+        if y.len() > 13 { y[13] = q_conv[2]; }
     }
 }

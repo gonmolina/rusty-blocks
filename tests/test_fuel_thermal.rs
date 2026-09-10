@@ -33,7 +33,7 @@ fn test_fuel_thermal_steady_state_equilibrium() {
 
     assert_eq!(block.num_states(), 6);
     assert_eq!(block.num_inputs(), 4);
-    assert_eq!(block.num_outputs(), 9);
+    assert_eq!(block.num_outputs(), 14);
 
     let mut state = vec![0.0; block.num_states()];
     block.get_initial_conditions(&mut state);
@@ -55,10 +55,14 @@ fn test_fuel_thermal_steady_state_equilibrium() {
     let t_doppler = outputs[0];
     let t_max = outputs[1];
     let vel = outputs[7];
+    let q_conv_w = outputs[9];
+    let q_conv_mw = outputs[10];
 
     assert!((t_doppler - 77.12).abs() < 0.2, "T_doppler inicial esperada ~77.12, dio {}", t_doppler);
     assert!((t_max - 83.29).abs() < 0.1, "T_max esperado ~83.29, dio {}", t_max);
     assert!((vel - 12.5).abs() < 1e-3, "Velocidad nominal debe ser 12.5 m/s");
+    assert!((q_conv_w - params.nominal_power_w).abs() < 5e4, "Q_conv esperado ~28.5 MW, dio {}", q_conv_w);
+    assert!((q_conv_mw - 28.5).abs() < 0.05, "Q_conv MW esperado ~28.5 MW, dio {}", q_conv_mw);
 
     // Simular durante 100 pasos en estado estacionario: debe mantenerse perfectamente invariante
     let mut current_state = state.clone();
