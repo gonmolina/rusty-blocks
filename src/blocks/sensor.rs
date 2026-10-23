@@ -143,30 +143,81 @@ impl SensorBlock {
 
     /// Calcula la calidad actual de la señal en función del estado de fallas y límites.
     pub fn current_quality(&self, val_eu: f64) -> SensorQuality {
+        let is_out_of_range = val_eu < self.min_eu || val_eu > self.max_eu;
         match &self.fault {
             SensorFault::None => {
-                if val_eu < self.min_eu || val_eu > self.max_eu {
-                    SensorQuality::Uncertain
+                if is_out_of_range {
+                    SensorQuality::Bad
                 } else {
                     SensorQuality::Good
                 }
             }
             SensorFault::OpenCircuit | SensorFault::ShortCircuit => SensorQuality::Bad,
-            SensorFault::NoiseBurst(_) => SensorQuality::Uncertain,
+            SensorFault::NoiseBurst(_) => {
+                if is_out_of_range {
+                    SensorQuality::Bad
+                } else {
+                    SensorQuality::Uncertain
+                }
+            }
             SensorFault::Stuck(_) | SensorFault::StuckAtCurrent | SensorFault::Drift { .. } | SensorFault::GainBias { .. } => {
-                SensorQuality::Faulted
+                if is_out_of_range {
+                    SensorQuality::Bad
+                } else {
+                    SensorQuality::Faulted
+                }
             }
         }
     }
 
     /// Convierte valor en unidades de ingeniería (EU) a corriente eléctrica (mA).
+    ///
+    /// Aplica clamping de saturación según norma NAMUR NE 43:
+    /// - 4.0 mA a 20.0 mA: Rango de medición lineal.
+    /// - 20.0 mA a 20.5 mA: Sobre-escala / saturación superior.
+    /// - 3.8 mA a 4.0 mA: Sub-escala / saturación inferior.
     pub fn eu_to_ma(&self, val_eu: f64) -> f64 {
         let span_eu = self.max_eu - self.min_eu;
         if span_eu.abs() < 1e-12 {
             return self.min_ma;
         }
         let frac = (val_eu - self.min_eu) / span_eu;
-        self.min_ma + frac * (self.max_ma - self.min_ma)
+        let linear_ma = self.min_ma + frac * (self.max_ma - self.min_ma);
+
+        // Clamping NAMUR NE 43: saturación de sobre-escala a 20.5 mA y sub-escala a 3.8 mA
+        linear_ma.clamp(3.8, 20.5)
+    }
+
+    /// Convierte corriente eléctrica (mA) a valor en unidades de ingeniería (EU).
+    /// Representa la lectura convertida por la tarjeta de entrada analógica (A/D converter / contador).
+    pub fn ma_to_eu(&self, val_ma: f64) -> f64 {
+        let span_ma = self.max_ma - self.min_ma;
+        if span_ma.abs() < 1e-12 {
+            return self.min_eu;
+        }
+        let frac = (val_ma - self.min_ma) / span_ma;
+        self.min_eu + frac * (self.max_eu - self.min_eu)
+    }
+
+    /// Convierte y satura una lectura física (EU) y su corriente asociada según el estándar NAMUR NE 43:
+    /// - Si la corriente equivalente excede 20.5 mA, tanto mA como EU saturan en ma_to_eu(20.5).
+    /// - Si la corriente equivalente es inferior a 3.8 mA, tanto mA como EU saturan en ma_to_eu(3.8).
+    /// - Dentro del rango válido, preserva el valor numérico exacto sin pérdidas de precisión.
+    pub fn clamp_eu_to_ma_range(&self, val_eu: f64) -> (f64, f64) {
+        let span_eu = self.max_eu - self.min_eu;
+        if span_eu.abs() < 1e-12 {
+            return (val_eu, self.min_ma);
+        }
+        let frac = (val_eu - self.min_eu) / span_eu;
+        let linear_ma = self.min_ma + frac * (self.max_ma - self.min_ma);
+
+        if linear_ma > 20.5 {
+            (self.ma_to_eu(20.5), 20.5)
+        } else if linear_ma < 3.8 {
+            (self.ma_to_eu(3.8), 3.8)
+        } else {
+            (val_eu, linear_ma)
+        }
     }
 
     pub fn build(params: Value, _registry: &BlockRegistry) -> Result<Box<dyn Block>, String> {
@@ -264,15 +315,14 @@ impl Block for SensorBlock {
         // 2. Evaluar Falla
         let (val_eu, val_ma) = match &self.fault {
             SensorFault::None => {
-                let v = val_filt + noise;
-                (v, self.eu_to_ma(v))
+                self.clamp_eu_to_ma_range(val_filt + noise)
             }
             SensorFault::Stuck(fixed_val) => {
-                (*fixed_val, self.eu_to_ma(*fixed_val))
+                self.clamp_eu_to_ma_range(*fixed_val)
             }
             SensorFault::StuckAtCurrent => {
                 let v = self.frozen_val.get().unwrap_or(val_filt);
-                (v, self.eu_to_ma(v))
+                self.clamp_eu_to_ma_range(v)
             }
             SensorFault::OpenCircuit => {
                 (self.min_eu - (self.max_eu - self.min_eu) * 0.1, 0.0) // 0 mA (< 3.6 mA)
@@ -282,17 +332,15 @@ impl Block for SensorBlock {
             }
             SensorFault::NoiseBurst(mult) => {
                 let v = val_filt + self.next_gaussian() * self.noise_std_dev.max(1.0) * mult;
-                (v, self.eu_to_ma(v))
+                self.clamp_eu_to_ma_range(v)
             }
             SensorFault::Drift { rate_per_sec, max_drift, start_time } => {
                 let dt_fault = (t - start_time).max(0.0);
                 let drift = (rate_per_sec * dt_fault).clamp(-max_drift.abs(), max_drift.abs());
-                let v = val_filt + noise + drift;
-                (v, self.eu_to_ma(v))
+                self.clamp_eu_to_ma_range(val_filt + noise + drift)
             }
             SensorFault::GainBias { gain, bias } => {
-                let v = val_filt * gain + bias + noise;
-                (v, self.eu_to_ma(v))
+                self.clamp_eu_to_ma_range(val_filt * gain + bias + noise)
             }
         };
 

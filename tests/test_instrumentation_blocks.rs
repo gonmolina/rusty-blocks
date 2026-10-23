@@ -205,3 +205,75 @@ fn test_block_registry_json_instantiation() {
     assert_eq!(act_block.sample_time(), Some(0.01));
 }
 
+#[test]
+fn test_sensor_namur_ne43_clamping_and_saturation() {
+    let dt = 0.01;
+    let tau = 0.001; // respuesta casi instantánea
+    let mut sensor = SensorBlock::new(
+        "1090-FIT-103102",
+        "Caudal entrada nucleo",
+        "pipe.canal_nucleo.flow",
+        "m3/h",
+        0.0,
+        3500.0,
+        tau,
+        dt,
+    );
+
+    // 1. Rango nominal: 0.0 m3/h -> 4.0 mA, Good
+    assert_eq!(sensor.eu_to_ma(0.0), 4.0);
+    assert_eq!(sensor.current_quality(0.0), SensorQuality::Good);
+
+    // 2. Rango nominal: 1750.0 m3/h (50%) -> 12.0 mA, Good
+    assert_eq!(sensor.eu_to_ma(1750.0), 12.0);
+    assert_eq!(sensor.current_quality(1750.0), SensorQuality::Good);
+
+    // 3. Fondo de escala exacto: 3500.0 m3/h (100%) -> 20.0 mA, Good
+    assert_eq!(sensor.eu_to_ma(3500.0), 20.0);
+    assert_eq!(sensor.current_quality(3500.0), SensorQuality::Good);
+
+    // 4. Sobre-escala moderada: 3550.0 m3/h -> saturación lineal < 20.5 mA
+    let ma_3550 = sensor.eu_to_ma(3550.0);
+    assert!(ma_3550 > 20.0 && ma_3550 < 20.5);
+    assert_eq!(sensor.current_quality(3550.0), SensorQuality::Bad);
+
+    // 5. Sobre-escala severa: 4000.0 m3/h -> saturación fija a 20.5 mA (NAMUR NE 43), valor EU saturado en 3609.375 m3/h y calidad Bad
+    assert_eq!(sensor.eu_to_ma(4000.0), 20.5);
+    assert_eq!(sensor.current_quality(4000.0), SensorQuality::Bad);
+    let mut outputs_4000 = vec![0.0, 0.0];
+    let state_4000 = vec![4000.0];
+    sensor.outputs(1.0, &state_4000, &[4000.0], &mut outputs_4000);
+    assert_eq!(outputs_4000[1], 20.5); // Corriente saturada en 20.5 mA
+    assert_eq!(outputs_4000[0], 3609.375); // El contador de entrada satura en el valor de 20.5 mA (3609.375 m3/h)
+    assert_eq!(sensor.current_quality(outputs_4000[0]), SensorQuality::Bad);
+
+    // 6. Sub-escala moderada: -20.0 m3/h -> saturación lineal > 3.8 mA
+    let ma_neg = sensor.eu_to_ma(-20.0);
+    assert!(ma_neg >= 3.8 && ma_neg < 4.0);
+    assert_eq!(sensor.current_quality(-20.0), SensorQuality::Bad);
+
+    // 7. Sub-escala severa: -200.0 m3/h -> saturación fija a 3.8 mA (NAMUR NE 43), valor EU saturado en -43.75 m3/h y calidad Bad
+    assert_eq!(sensor.eu_to_ma(-200.0), 3.8);
+    assert_eq!(sensor.current_quality(-200.0), SensorQuality::Bad);
+    let mut outputs_neg = vec![0.0, 0.0];
+    let state_neg = vec![-200.0];
+    sensor.outputs(1.0, &state_neg, &[-200.0], &mut outputs_neg);
+    assert_eq!(outputs_neg[1], 3.8);
+    assert!((outputs_neg[0] - (-43.75)).abs() < 1e-4); // El contador de entrada satura en el valor de 3.8 mA (-43.75 m3/h)
+    assert_eq!(sensor.current_quality(outputs_neg[0]), SensorQuality::Bad);
+
+    // 8. Falla explícita OpenCircuit: conserva 0.0 mA (fuera de zona NAMUR < 3.6 mA)
+    sensor.set_fault(SensorFault::OpenCircuit);
+    let mut outputs = vec![0.0, 0.0];
+    let state = vec![0.0];
+    sensor.outputs(1.0, &state, &[0.0], &mut outputs);
+    assert_eq!(outputs[1], 0.0);
+    assert_eq!(sensor.current_quality(outputs[0]), SensorQuality::Bad);
+
+    // 9. Falla explícita ShortCircuit: conserva 24.0 mA (fuera de zona NAMUR > 21.0 mA)
+    sensor.set_fault(SensorFault::ShortCircuit);
+    sensor.outputs(2.0, &state, &[0.0], &mut outputs);
+    assert_eq!(outputs[1], 24.0);
+    assert_eq!(sensor.current_quality(outputs[0]), SensorQuality::Bad);
+}
+
